@@ -6,8 +6,8 @@
     <title>StreamIndex - Watch Movies & TV Shows</title>
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <!-- Supabase JS Client -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Supabase JS Client (pinned version for sb_publishable key support) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd.min.js"></script>
 
     <style>
         :root {
@@ -32,14 +32,12 @@
             padding-top: var(--nav-height);
         }
 
-        /* --- Focus visibility (keyboard users) --- */
         a:focus-visible, button:focus-visible, input:focus-visible, .kb-interactive:focus-visible {
             outline: 2px solid var(--accent);
             outline-offset: 2px;
             border-radius: 2px;
         }
 
-        /* --- Respect reduced-motion preference --- */
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after {
                 animation-duration: 0.001ms !important;
@@ -79,7 +77,7 @@
         .user-profile { position: relative; display: flex; align-items: center; gap: 10px; cursor: pointer; flex-shrink: 0; }
         .avatar { width: 32px; height: 32px; background: var(--primary); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: 700; }
 
-        /* --- Account dropdown (click, not hover — works on mobile) --- */
+        /* --- Account dropdown --- */
         .user-dropdown {
             position: absolute; top: calc(100% + 10px); right: 0;
             background: var(--bg-card); border: 1px solid rgba(255,255,255,0.15);
@@ -129,7 +127,7 @@
             position: relative;
             width: 100%;
             overflow: hidden;
-            height: 50vh; /* Mobile */
+            height: 50vh;
         }
         @media (min-width: 768px) {
             .hero-carousel { height: 80vh; }
@@ -196,7 +194,6 @@
         }
         .btn-primary { background: var(--primary); color: white; }
         .btn-secondary { background: rgba(255,255,255,0.2); color: white; backdrop-filter: blur(5px); }
-        .btn-outline { background: transparent; border: 1px solid white; color: white; }
         .btn:hover { transform: scale(1.05); }
 
         .hero-dots {
@@ -216,7 +213,7 @@
         }
         .hero-pause:hover { background: var(--primary); }
 
-        /* --- Filter bar (search + type chips) --- */
+        /* --- Filter bar --- */
         .filter-bar {
             display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
             padding: 1.5rem 4% 0;
@@ -241,7 +238,7 @@
         .chip:hover { background: var(--bg-hover); color: var(--text-main); }
         .chip.active { background: var(--primary); border-color: var(--primary); color: white; }
 
-        /* --- Content Grid --- */
+        /* --- Content --- */
         .category-section { padding: 2rem 4%; }
         .category-title { margin-bottom: 1rem; font-size: 1.2rem; font-weight: 600; }
 
@@ -250,7 +247,6 @@
             gap: 1.5rem;
         }
 
-        /* --- Rail header: category title + See All --- */
         .rail-header {
             display: flex; align-items: baseline; justify-content: space-between;
             gap: 1rem; margin-bottom: 0.5rem;
@@ -268,9 +264,7 @@
         span.see-all:hover { color: var(--text-sub); }
         .see-all .chev { transition: transform 0.2s; }
         .see-all:hover .chev { transform: translateX(3px); }
-        .see-all:hover .chev.back { transform: translateX(-3px); }
 
-        /* --- Horizontal scroll rail --- */
         .rail-wrap { position: relative; }
 
         .movie-rail {
@@ -293,7 +287,6 @@
             scroll-snap-align: start;
         }
 
-        /* Arrow buttons */
         .rail-nav {
             position: absolute; top: 50%; transform: translateY(-50%);
             width: 38px; height: 68px; border: none; border-radius: 6px;
@@ -310,7 +303,6 @@
         .rail-nav[hidden] { display: none; }
         @media (hover: none) { .rail-nav { display: none; } }
 
-        /* Loading placeholders */
         .skeleton-card { flex: 0 0 160px; border-radius: 8px; overflow: hidden; background: var(--bg-card); }
         .skeleton-poster {
             width: 100%; aspect-ratio: 2/3;
@@ -416,7 +408,6 @@
         }
         .progress-fill { height: 100%; background: var(--primary); }
 
-        /* --- Player Overlay / Modal --- */
         .modal {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.98); z-index: 2000;
@@ -424,11 +415,9 @@
         }
         .modal.active { display: flex; }
 
-        /* Pages */
         .page-section { display: none; padding-top: 2rem; min-height: 100vh; }
         .page-section.active { display: block; }
 
-        /* Toast */
         .toast {
             position: fixed; bottom: 20px; right: 20px;
             background: var(--bg-card); border-left: 4px solid var(--accent);
@@ -437,7 +426,6 @@
         }
         .toast.show { transform: translateY(0); }
 
-        /* Responsive Grid */
         @media (max-width: 768px) {
             .movie-grid { grid-template-columns: repeat(2, 1fr); }
             .filter-bar { flex-direction: column; align-items: stretch; }
@@ -478,9 +466,7 @@
 
         <!-- Hero Carousel -->
         <section class="hero-carousel">
-            <div class="hero-slides-container" id="hero-slides-container">
-                <!-- slides injected dynamically from TMDB trending data -->
-            </div>
+            <div class="hero-slides-container" id="hero-slides-container"></div>
 
             <div class="hero-content-wrapper">
                 <div class="hero-content" id="hero-content">
@@ -503,9 +489,7 @@
                 </div>
             </div>
 
-            <div class="hero-dots" id="hero-dots">
-                <!-- dots injected dynamically -->
-            </div>
+            <div class="hero-dots" id="hero-dots"></div>
             <button class="hero-pause" id="hero-pause" type="button" aria-label="Pause slideshow" onclick="toggleAutoplay()">&#10073;&#10073;</button>
         </section>
 
@@ -531,10 +515,8 @@
             </div>
         </section>
 
-        <!-- Every category rail is built from the CATEGORIES list in JS -->
         <div id="rails-container"></div>
 
-        <!-- Full-screen view for "See all" and search results -->
         <section id="browse-view" style="display:none;">
             <div class="browse-head">
                 <button class="back-btn" type="button" onclick="backToHome()"><span aria-hidden="true">&lsaquo;</span> Back</button>
@@ -624,14 +606,18 @@
     <!-- Toast -->
     <div id="toast" class="toast">Action completed</div>
 
-    <!-- Scripts -->
     <script>
         // ==========================================
-        // 0. SUPABASE CONFIG (accounts + cloud sync)
+        // 0. SUPABASE CONFIG (guarded — never kills the page)
         // ==========================================
         const SUPABASE_URL = 'https://iqmxvknctktprijalic.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_IXicSQIcfL_yhFUgRH8Qfg_3qwmqqML';
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        let supabase = null; // single declaration — do not redeclare anywhere else
+        try {
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        } catch (e) {
+            console.error('Supabase init failed — running in guest mode:', e);
+        }
 
         // --- Built-in Local Storage Manager (guest mode) ---
         const LocalStore = {
@@ -692,22 +678,22 @@
         }
 
         const CATEGORIES = [
-            { key: 'trending',  title: 'Trending Now',        path: '/trending/all/week' },
-            { key: 'new',       title: 'New Arrivals',        path: '/movie/now_playing' },
-            { key: 'tv',        title: 'TV Shows',            path: '/tv/popular' },
-            { key: 'series',    title: 'Top Rated Series',    path: '/tv/top_rated' },
-            { key: 'anime',     title: 'Anime',               path: '/discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc' },
-            { key: 'animation', title: 'Animation',           path: '/discover/movie?with_genres=16&sort_by=popularity.desc' },
-            { key: 'action',    title: 'Action',              path: '/discover/movie?with_genres=28&sort_by=popularity.desc' },
-            { key: 'comedy',    title: 'Comedy',              path: '/discover/movie?with_genres=35&sort_by=popularity.desc' },
-            { key: 'horror',    title: 'Horror',              path: '/discover/movie?with_genres=27&sort_by=popularity.desc' },
-            { key: 'scifi',     title: 'Sci-Fi',              path: '/discover/movie?with_genres=878&sort_by=popularity.desc' },
-            { key: 'thriller',  title: 'Thrillers',           path: '/discover/movie?with_genres=53&sort_by=popularity.desc' },
-            { key: 'romance',   title: 'Romance',             path: '/discover/movie?with_genres=10749&sort_by=popularity.desc' },
-            { key: 'docs',      title: 'Documentaries',       path: '/discover/movie?with_genres=99&sort_by=popularity.desc' },
-            { key: 'toprated',  title: 'Top Rated Movies',    path: '/movie/top_rated' },
-            { key: 'kdrama',    title: 'K-Drama',             path: '/discover/tv?with_original_language=ko&sort_by=popularity.desc' },
-            { key: 'family',    title: 'Family',              path: '/discover/movie?with_genres=10751&sort_by=popularity.desc' }
+            { key: 'trending',  title: 'Trending Now',     path: '/trending/all/week' },
+            { key: 'new',       title: 'New Arrivals',     path: '/movie/now_playing' },
+            { key: 'tv',        title: 'TV Shows',         path: '/tv/popular' },
+            { key: 'series',    title: 'Top Rated Series', path: '/tv/top_rated' },
+            { key: 'anime',     title: 'Anime',            path: '/discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc' },
+            { key: 'animation', title: 'Animation',        path: '/discover/movie?with_genres=16&sort_by=popularity.desc' },
+            { key: 'action',    title: 'Action',           path: '/discover/movie?with_genres=28&sort_by=popularity.desc' },
+            { key: 'comedy',    title: 'Comedy',           path: '/discover/movie?with_genres=35&sort_by=popularity.desc' },
+            { key: 'horror',    title: 'Horror',           path: '/discover/movie?with_genres=27&sort_by=popularity.desc' },
+            { key: 'scifi',     title: 'Sci-Fi',           path: '/discover/movie?with_genres=878&sort_by=popularity.desc' },
+            { key: 'thriller',  title: 'Thrillers',        path: '/discover/movie?with_genres=53&sort_by=popularity.desc' },
+            { key: 'romance',   title: 'Romance',          path: '/discover/movie?with_genres=10749&sort_by=popularity.desc' },
+            { key: 'docs',      title: 'Documentaries',    path: '/discover/movie?with_genres=99&sort_by=popularity.desc' },
+            { key: 'toprated',  title: 'Top Rated Movies', path: '/movie/top_rated' },
+            { key: 'kdrama',    title: 'K-Drama',          path: '/discover/tv?with_original_language=ko&sort_by=popularity.desc' },
+            { key: 'family',    title: 'Family',           path: '/discover/movie?with_genres=10751&sort_by=popularity.desc' }
         ];
 
         const catalogs = {};
@@ -848,11 +834,12 @@
         }
 
         // ==========================================
-        // AUTHENTICATION (Supabase)
+        // AUTHENTICATION (Supabase — guarded)
         // ==========================================
         let isSignUpMode = false;
 
         async function initAuth() {
+            if (!supabase) return;
             const { data: { session } } = await supabase.auth.getSession();
             handleUserState(session?.user || null);
             supabase.auth.onAuthStateChange((_event, session) => {
@@ -872,7 +859,6 @@
                 display.innerText = prefix;
                 avatar.innerText = prefix.charAt(0).toUpperCase();
                 dropdown.style.display = '';
-                // Only pull cloud data on fresh login (avoid clobbering UI on token refresh)
                 if (before !== user.id) await loadCloudData();
             } else {
                 display.innerText = 'Sign In';
@@ -880,7 +866,7 @@
                 dropdown.style.display = 'none';
                 dropdown.classList.remove('open');
                 if (before) {
-                    loadStores(); // fall back to local guest data
+                    loadStores();
                     updateBookmarksUI();
                     updateWatchLaterUI();
                     renderContinueWatching();
@@ -893,7 +879,6 @@
             document.getElementById('user-dropdown').classList.toggle('open');
         }
 
-        // Close dropdown when clicking elsewhere
         document.addEventListener('click', (e) => {
             const wrap = document.getElementById('user-btn');
             if (wrap && !wrap.contains(e.target)) {
@@ -931,6 +916,10 @@
 
         async function submitAuth(e) {
             e.preventDefault();
+            if (!supabase) {
+                document.getElementById('auth-error').innerText = 'Accounts unavailable — check Supabase setup.';
+                return;
+            }
             const email = document.getElementById('auth-email').value.trim();
             const password = document.getElementById('auth-password').value;
             const btn = document.getElementById('auth-submit-btn');
@@ -965,6 +954,7 @@
         }
 
         async function signOutUser() {
+            if (!supabase) return;
             await supabase.auth.signOut();
             showToast('Signed out');
         }
@@ -973,9 +963,8 @@
         // CLOUD SYNC (lists + watch progress)
         // ==========================================
         async function loadCloudData() {
-            if (!currentUser) return;
+            if (!currentUser || !supabase) return;
             try {
-                // Merge cloud lists with whatever local guest data exists
                 const { data: lists, error: lErr } = await supabase
                     .from('user_lists')
                     .select('list, movie')
@@ -997,13 +986,11 @@
                 };
                 bookmarks = merge(bookmarks, cloudBm);
                 watchLater = merge(watchLater, cloudWl);
-                // Push any local-only items up to the cloud
                 for (const m of bookmarks) await cloudAddToList('bookmarks', m);
                 for (const m of watchLater) await cloudAddToList('watchlater', m);
                 LocalStore.setList('bookmarks', bookmarks);
                 LocalStore.setList('watchlater', watchLater);
 
-                // Watch progress
                 const { data: prog, error: pErr } = await supabase
                     .from('watch_progress')
                     .select('*')
@@ -1013,7 +1000,7 @@
                     if (!continueWatching[row.media_id] || (row.timestamp_seconds || 0) > (continueWatching[row.media_id].t || 0)) {
                         continueWatching[row.media_id] = {
                             t: Number(row.timestamp_seconds || 0),
-                            pct: Number(row.progress_percent || 0),
+                            pct: Number(row.progress_percent || 0) / 100,
                             movie: row.movie
                         };
                         if (row.movie) { watchedMeta[row.movie.id] = row.movie; LocalStore.saveMeta(row.movie); }
@@ -1031,7 +1018,7 @@
         }
 
         async function cloudAddToList(list, movie) {
-            if (!currentUser || !movie) return;
+            if (!supabase || !currentUser || !movie) return;
             const { error } = await supabase
                 .from('user_lists')
                 .upsert({
@@ -1044,7 +1031,7 @@
         }
 
         async function cloudRemoveFromList(list, movieId) {
-            if (!currentUser) return;
+            if (!supabase || !currentUser) return;
             const { error } = await supabase
                 .from('user_lists')
                 .delete()
@@ -1054,33 +1041,9 @@
             if (error) console.error('Cloud remove failed:', error.message);
         }
 
-        // Called from watch.html (or anywhere) to save progress
-        async function saveWatchProgress(movie, tSeconds, pct) {
-            if (!movie) return;
-            continueWatching[String(movie.id)] = { t: tSeconds, pct, movie };
-            LocalStore.saveMeta(movie);
-            LocalStore.setAllProgress(continueWatching);
-            if (!currentUser) return; // guests stay local-only
-            const { error } = await supabase
-                .from('watch_progress')
-                .upsert({
-                    user_id: currentUser.id,
-                    media_id: String(movie.id),
-                    title: movie.title,
-                    poster_url: movie.poster || null,
-                    progress_percent: Math.min(pct * 100, 100),
-                    timestamp_seconds: tSeconds,
-                    movie,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'user_id,media_id' });
-            if (error) console.error('Progress save failed:', error.message);
-        }
-
         let lastFocusedElement = null;
         let activeGenre = 'all';
         let searchQuery = '';
-
-        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
         // Carousel Logic
         let slides = document.querySelectorAll('.hero-slide');
@@ -1190,7 +1153,6 @@
                 resetSlideshow();
             }
 
-            // Header Scroll Effect
             window.addEventListener('scroll', () => {
                 const header = document.getElementById('main-header');
                 if (window.scrollY > 50) header.classList.add('scrolled');
@@ -1223,9 +1185,7 @@
             if (autoplayEnabled) startSlideshow(); else clearInterval(slideInterval);
         }
 
-        function resetSlideshow() {
-            startSlideshow();
-        }
+        function resetSlideshow() { startSlideshow(); }
         function nextSlide() {
             if (slides.length === 0) return;
             currentSlide = (currentSlide + 1) % slides.length;
@@ -1262,7 +1222,6 @@
             const title = escapeHtml(m.title);
             const overview = escapeHtml(m.overview) || 'No synopsis available for this title yet.';
 
-            // Build Contextual Hover Actions
             let actionsHtml = '';
             if (context === 'bookmarks') {
                 actionsHtml = `
