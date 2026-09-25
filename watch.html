@@ -6,6 +6,7 @@
     <title>Watch · StreamIndex</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 
     <style>
         :root {
@@ -76,12 +77,29 @@
         }
         .player:fullscreen { max-width: none; aspect-ratio: auto; height: 100%; }
 
-        .player iframe {
+        .player iframe, .player video {
             width: 100%; height: 100%;
             border: none;
             display: block;
             background: #000;
         }
+        .player video { object-fit: contain; }
+        .player video[hidden] { display: none; }
+
+        /* Resume banner shown over the player before continuing */
+        .resume-bar {
+            position: absolute; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8); backdrop-filter: blur(4px);
+            display: none; align-items: center; justify-content: center; gap: 14px;
+            padding: 14px; z-index: 20; font-size: 0.9rem;
+        }
+        .resume-bar.show { display: flex; }
+        .resume-bar button {
+            font: inherit; font-weight: 600; border: none; cursor: pointer;
+            padding: 8px 18px; border-radius: 4px;
+        }
+        .resume-yes { background: var(--text-main); color: #000; }
+        .resume-no { background: rgba(255,255,255,0.15); color: #fff; }
 
         /* --- Source / subtitle bar --- */
         .watch-bar {
@@ -100,12 +118,16 @@
         }
         .pill:hover { background: var(--bg-hover); color: var(--text-main); }
         .pill.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .pill.direct.active { background: var(--accent); border-color: var(--accent); color: #000; }
 
         .source-state {
             display: inline-flex; align-items: center; gap: 7px;
             font-size: 0.78rem; color: var(--text-sub);
         }
         .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+        .dot.busy { background: var(--warn); animation: blink 1s infinite; }
+        .dot.err { background: var(--primary); }
+        @keyframes blink { 50% { opacity: 0.3; } }
 
         /* --- Title block --- */
         .title-block { max-width: 1200px; margin: 0 auto; padding: 24px 4% 0; }
@@ -159,6 +181,7 @@
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .episode-card .ep-runtime { display: block; padding: 0 10px 10px; font-size: 0.72rem; color: var(--text-sub); }
+        .episode-card .ep-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: var(--primary); z-index: 3; }
 
         /* --- Similar grid --- */
         .similar-section { max-width: 1200px; margin: 0 auto; padding: 34px 4% 60px; }
@@ -203,10 +226,7 @@
         }
 
         /* Hover overlay for similar title cards */
-        .poster-wrap {
-            position: relative;
-            width: 100%;
-        }
+        .poster-wrap { position: relative; width: 100%; }
 
         .card-overlay {
             position: absolute;
@@ -220,9 +240,7 @@
             transition: opacity 0.2s ease;
         }
 
-        .movie-card:hover .card-overlay {
-            opacity: 1;
-        }
+        .movie-card:hover .card-overlay { opacity: 1; }
 
         .overlay-btn {
             background: rgba(255, 255, 255, 0.2);
@@ -239,10 +257,7 @@
             transition: background 0.2s, transform 0.2s;
         }
 
-        .overlay-btn:hover {
-            background: var(--primary);
-            transform: scale(1.1);
-        }
+        .overlay-btn:hover { background: var(--primary); transform: scale(1.1); }
     </style>
 </head>
 <body>
@@ -258,6 +273,12 @@
 <div class="stage">
     <div class="player" id="player">
         <iframe id="movie-iframe" allowfullscreen scrolling="no"></iframe>
+        <video id="video-player" controls playsinline hidden></video>
+        <div class="resume-bar" id="resume-bar">
+            <span id="resume-text">Resume from where you left off?</span>
+            <button class="resume-yes" id="resume-yes" type="button">Resume</button>
+            <button class="resume-no" id="resume-no" type="button">Start over</button>
+        </div>
     </div>
 </div>
 
@@ -268,7 +289,7 @@
     </div>
 
     <div class="bar-group" style="margin-left:auto">
-        <span class="source-state"><span class="dot"></span><span id="state-text">Online</span></span>
+        <span class="source-state"><span class="dot" id="state-dot"></span><span id="state-text">Online</span></span>
         <button class="pill" id="bookmark-btn" type="button">Save to list</button>
         <button class="pill" id="later-btn" type="button">Watch later</button>
     </div>
@@ -302,8 +323,17 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="store.js"></script>
 <script>
+    // ==========================================
+    // CONFIG
+    // ==========================================
+    const SUPABASE_URL = 'https://iqmxvknctktprijalic.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_IXicSQIcfL_yhFUgRH8Qfg_3qwmqqML';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // Your extraction backend (server.js). Change this if you deploy it elsewhere.
+    const BACKEND_URL = 'http://localhost:5000';
+
     const TMDB_API_KEY = '8950f9f8257d45a24d373932a74ba2ec';
     const TMDB_BASE = 'https://api.themoviedb.org/3';
     const TMDB_POSTER = 'https://image.tmdb.org/t/p/w500';
@@ -325,27 +355,40 @@
     const params = new URLSearchParams(location.search);
     const mediaId = params.get('id');
     const mediaType = params.get('type') === 'tv' ? 'tv' : 'movie';
-    
+
     let selectedSeason = parseInt(params.get('season')) || 1;
     let selectedEpisode = parseInt(params.get('episode')) || 1;
 
     let currentMovie = null;
-    let imdbId = null; // Stored to prevent ID mismatch on legacy shows
+    let imdbId = null;
     let showSeasons = [];
     let currentSeasonEpisodes = [];
+    let currentUser = null;
+    let hls = null;
+    let resumeAt = null;
+    let usingDirectStream = false;
+    let progressSaveTimer = null;
 
-    // Updated working English-first embed servers
+    // Embed servers. Server 0 = "Direct" (backend-extracted m3u8 via hls.js)
     const SERVERS = [
+        { id: 0, label: 'Direct (best)', direct: true },
         { id: 1, label: 'Server 1 (VidLink)' },
         { id: 2, label: 'Server 2 (AutoEmbed)' },
         { id: 3, label: 'Server 3 (VidSrc VIP)' },
         { id: 4, label: 'Server 4 (MultiEmbed)' },
         { id: 5, label: 'Server 5 (2Embed)' }
     ];
-    let activeServerId = 1;
+    let activeServerId = 0;
+
+    function progressKey() {
+        // Per-episode keys for TV, plain id for movies. index.html understands the "-s" split.
+        return mediaType === 'tv'
+            ? `${mediaId}-s${selectedSeason}e${selectedEpisode}`
+            : String(mediaId);
+    }
 
     function getEmbedUrl(serverId) {
-        const idToUse = imdbId || mediaId; // Use IMDb ID if available to prevent incorrect show mappings
+        const idToUse = imdbId || mediaId;
 
         if (mediaType === 'tv') {
             switch(serverId) {
@@ -375,16 +418,81 @@
         return res.json();
     }
 
+    // ==========================================
+    // PROGRESS (localStorage + Supabase cloud)
+    // ==========================================
+    function getLocalProgress() {
+        return JSON.parse(localStorage.getItem('streamindex_progress') || '{}');
+    }
+
+    function saveProgressLocal(t, pct) {
+        const all = getLocalProgress();
+        const meta = JSON.parse(localStorage.getItem('streamindex_meta') || '{}');
+        if (currentMovie) { meta[currentMovie.id] = currentMovie; localStorage.setItem('streamindex_meta', JSON.stringify(meta)); }
+        all[progressKey()] = { t, pct, movie: currentMovie };
+        localStorage.setItem('streamindex_progress', JSON.stringify(all));
+    }
+
+    async function saveProgressCloud(t, pct) {
+        if (!currentUser || !currentMovie) return;
+        const { error } = await supabase
+            .from('watch_progress')
+            .upsert({
+                user_id: currentUser.id,
+                media_id: progressKey(),
+                title: currentMovie.title + (mediaType === 'tv' ? ` — S${selectedSeason}E${selectedEpisode}` : ''),
+                poster_url: currentMovie.poster || null,
+                progress_percent: Math.min(pct * 100, 100),
+                timestamp_seconds: t,
+                movie: currentMovie,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id,media_id' });
+        if (error) console.error('Cloud progress save failed:', error.message);
+    }
+
+    // Call this whenever playback advances meaningfully (throttled by caller)
+    function saveProgress(t, pct, immediate = false) {
+        if (!currentMovie) return;
+        saveProgressLocal(t, pct);
+        if (immediate) saveProgressCloud(t, pct);
+    }
+
+    async function loadSavedProgress() {
+        // Prefer the furthest of cloud vs local
+        const local = getLocalProgress()[progressKey()];
+        let best = local ? { t: local.t, pct: local.pct } : null;
+
+        if (currentUser) {
+            try {
+                const { data, error } = await supabase
+                    .from('watch_progress')
+                    .select('timestamp_seconds, progress_percent')
+                    .eq('user_id', currentUser.id)
+                    .eq('media_id', progressKey())
+                    .maybeSingle();
+                if (!error && data && (!best || (data.timestamp_seconds || 0) > best.t)) {
+                    best = { t: Number(data.timestamp_seconds || 0), pct: Number(data.progress_percent || 0) / 100 };
+                }
+            } catch (e) { console.warn(e); }
+        }
+        return best;
+    }
+
+    // ==========================================
+    // INIT
+    // ==========================================
     async function initWatch() {
         if (!mediaId) {
             document.getElementById('watch-title').innerText = 'No title specified';
             return;
         }
 
+        supabase.auth.getSession().then(({ data: { session } }) => { currentUser = session?.user || null; });
+        supabase.auth.onAuthStateChange((_e, session) => { currentUser = session?.user || null; });
+
         try {
             const data = await fetchTMDB(`/${mediaType}/${mediaId}`);
-            
-            // Fetch IMDb ID to ensure proper stream matching
+
             try {
                 const extData = await fetchTMDB(`/${mediaType}/${mediaId}/external_ids`);
                 imdbId = extData.imdb_id || null;
@@ -411,14 +519,15 @@
                 <span class="rating">★ ${currentMovie.rating}</span>
             `;
 
-            if (window.Store && typeof Store.saveMeta === 'function') {
-                Store.saveMeta(currentMovie);
-            }
+            const meta = JSON.parse(localStorage.getItem('streamindex_meta') || '{}');
+            meta[currentMovie.id] = currentMovie;
+            localStorage.setItem('streamindex_meta', JSON.stringify(meta));
 
             if (mediaType === 'tv') {
                 showSeasons = (data.seasons || []).filter(s => s.season_number > 0);
                 if (showSeasons.length > 0) {
                     const validSeason = showSeasons.find(s => s.season_number === selectedSeason) ? selectedSeason : showSeasons[0].season_number;
+                    selectedSeason = validSeason;
                     await loadSeasonEpisodes(validSeason);
                     document.getElementById('episode-bar').style.display = '';
                     buildSeasonDropdown();
@@ -435,6 +544,9 @@
         setupUI();
     }
 
+    // ==========================================
+    // EPISODES
+    // ==========================================
     async function loadSeasonEpisodes(seasonNum) {
         selectedSeason = seasonNum;
         const btn = document.getElementById('season-btn');
@@ -458,15 +570,17 @@
             opt.className = 'season-option';
             opt.innerText = `Season ${s.season_number}`;
             opt.onclick = () => {
+                selectedEpisode = 1;
                 loadSeasonEpisodes(s.season_number);
                 dropdown.classList.remove('open');
-                selectedEpisode = 1;
-                
+
                 const newUrl = new URL(window.location);
                 newUrl.searchParams.set('season', s.season_number);
                 newUrl.searchParams.set('episode', 1);
                 window.history.replaceState({}, '', newUrl);
 
+                renderEpisodeStrip();
+                updateEpisodeContext();
                 updatePlayerSource();
             };
             dropdown.appendChild(opt);
@@ -484,7 +598,11 @@
     function renderEpisodeStrip() {
         const strip = document.getElementById('episode-strip');
         strip.innerHTML = '';
+        const allProgress = getLocalProgress();
         currentSeasonEpisodes.forEach(ep => {
+            const key = `${mediaId}-s${selectedSeason}e${ep.episode_number}`;
+            const prog = allProgress[key];
+
             const card = document.createElement('button');
             card.className = `episode-card ${ep.episode_number === selectedEpisode ? 'active' : ''}`;
             card.innerHTML = `
@@ -492,10 +610,11 @@
                 <span class="ep-num">E${ep.episode_number}</span>
                 <span class="ep-title">${ep.name}</span>
                 <span class="ep-runtime">${ep.runtime ? ep.runtime + 'm' : ''}</span>
+                ${prog ? `<span class="ep-progress" style="width:${Math.min(prog.pct * 100, 100)}%"></span>` : ''}
             `;
             card.onclick = () => {
                 selectedEpisode = ep.episode_number;
-                
+
                 const newUrl = new URL(window.location);
                 newUrl.searchParams.set('season', selectedSeason);
                 newUrl.searchParams.set('episode', selectedEpisode);
@@ -526,6 +645,9 @@
         }
     }
 
+    // ==========================================
+    // SIMILAR
+    // ==========================================
     async function loadSimilar() {
         try {
             const data = await fetchTMDB(`/${mediaType}/${mediaId}/similar`);
@@ -537,10 +659,10 @@
                 type: mediaType,
                 poster: item.poster_path ? TMDB_POSTER + item.poster_path : null
             }));
-            
+
             const grid = document.getElementById('similar-grid');
             grid.innerHTML = '';
-            
+
             items.forEach(m => {
                 const card = document.createElement('div');
                 card.className = 'movie-card';
@@ -568,12 +690,10 @@
                 card.onclick = () => { window.location.href = `watch.html?id=${m.id}&type=${mediaType}`; };
 
                 const bookmarkBtn = card.querySelector('.bookmark-btn');
-                bookmarkBtn.onclick = async (e) => {
+                bookmarkBtn.onclick = (e) => {
                     e.stopPropagation();
-                    if (window.Store && typeof Store.addToList === 'function') {
-                        await Store.addToList('bookmarks', m);
-                        showToast(`Saved "${m.title}" to list`);
-                    }
+                    addToList('bookmarks', m);
+                    showToast(`Saved "${m.title}" to list`);
                 };
 
                 grid.appendChild(card);
@@ -583,12 +703,40 @@
         }
     }
 
+    // ==========================================
+    // LISTS (local + cloud, same shape as index.html)
+    // ==========================================
+    function addToList(list, movie) {
+        const items = JSON.parse(localStorage.getItem(`streamindex_${list}`) || '[]');
+        if (items.some(m => String(m.id) === String(movie.id))) return false;
+        items.push(movie);
+        localStorage.setItem(`streamindex_${list}`, JSON.stringify(items));
+        cloudAddToList(list, movie);
+        return true;
+    }
+
+    async function cloudAddToList(list, movie) {
+        if (!currentUser) return;
+        const { error } = await supabase
+            .from('user_lists')
+            .upsert({
+                user_id: currentUser.id,
+                list,
+                media_id: String(movie.id),
+                movie
+            }, { onConflict: 'user_id,list,media_id' });
+        if (error) console.error('Cloud list save failed:', error.message);
+    }
+
+    // ==========================================
+    // PLAYER
+    // ==========================================
     function setupPlayer() {
         const serverPills = document.getElementById('server-pills');
-        serverPills.innerHTML = ''; // Clear previous pills
+        serverPills.innerHTML = '';
         SERVERS.forEach(s => {
             const pill = document.createElement('button');
-            pill.className = `pill ${s.id === activeServerId ? 'active' : ''}`;
+            pill.className = `pill ${s.direct ? 'direct' : ''} ${s.id === activeServerId ? 'active' : ''}`;
             pill.innerText = s.label;
             pill.onclick = () => switchServer(s.id);
             serverPills.appendChild(pill);
@@ -599,29 +747,204 @@
 
     function switchServer(id) {
         activeServerId = id;
-        document.querySelectorAll('#server-pills .pill').forEach((p, idx) => {
-            p.classList.toggle('active', SERVERS[idx].id === id);
-        });
+        document.querySelectorAll('#server-pills .pill').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('#server-pills .pill')[SERVERS.findIndex(s => s.id === id)]?.classList.add('active');
         updatePlayerSource();
     }
 
-    function updatePlayerSource() {
-        const iframe = document.getElementById('movie-iframe');
-        iframe.src = getEmbedUrl(activeServerId);
+    function setState(kind, text) {
+        const dot = document.getElementById('state-dot');
+        dot.className = 'dot' + (kind === 'busy' ? ' busy' : kind === 'err' ? ' err' : '');
+        document.getElementById('state-text').innerText = text;
     }
 
+    async function updatePlayerSource() {
+        const iframe = document.getElementById('movie-iframe');
+        const video = document.getElementById('video-player');
+        stopProgressTracking();
+        destroyHls();
+        video.pause?.().catch(() => {});
+        video.hidden = true;
+        iframe.hidden = false;
+        hideResumeBar();
+
+        if (activeServerId === 0) {
+            await tryDirectStream();
+        } else {
+            iframe.src = getEmbedUrl(activeServerId);
+            setState('ok', 'Embed mode');
+            markStarted();
+        }
+    }
+
+    // Ask the backend for the raw m3u8 and play it ourselves (enables resume)
+    async function tryDirectStream() {
+        setState('busy', 'Extracting stream…');
+        const qs = new URLSearchParams({
+            id: mediaId,
+            type: mediaType,
+            server: 1,
+            season: selectedSeason,
+            episode: selectedEpisode
+        });
+
+        try {
+            const res = await fetchWithTimeout(`${BACKEND_URL}/api/stream?${qs}`, 45000);
+            if (!res.ok) throw new Error(`backend ${res.status}`);
+            const data = await res.json();
+
+            if (data.isRawStream && data.targetUrl) {
+                playDirect(data.targetUrl, data.referer || '');
+            } else {
+                throw new Error('no stream extracted');
+            }
+        } catch (err) {
+            console.warn('Direct stream failed:', err.message);
+            setState('err', 'Direct unavailable — using embed');
+            // Silently fall back to embed server 1
+            activeServerId = 1;
+            document.querySelectorAll('#server-pills .pill').forEach(p => p.classList.remove('active'));
+            const pills = document.querySelectorAll('#server-pills .pill');
+            if (pills[1]) pills[1].classList.add('active');
+            document.getElementById('movie-iframe').src = getEmbedUrl(1);
+            markStarted();
+        }
+    }
+
+    function fetchWithTimeout(url, ms) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), ms);
+        return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
+    }
+
+    function playDirect(streamUrl, referer) {
+        const video = document.getElementById('video-player');
+        const iframe = document.getElementById('movie-iframe');
+        iframe.src = 'about:blank';
+        iframe.hidden = true;
+        video.hidden = false;
+        usingDirectStream = true;
+        setState('ok', 'Direct stream (resumable)');
+
+        const src = streamUrl.startsWith('http') && !streamUrl.startsWith('http://localhost')
+            ? streamUrl // already proxied by backend
+            : streamUrl;
+
+        if (Hls.isSupported()) {
+            hls = new Hls({ enableWorker: true });
+            hls.loadSource(src);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.ERROR, (_e, d) => {
+                if (d.fatal) {
+                    console.error('HLS fatal error:', d);
+                    setState('err', 'Stream error — switching to embed');
+                    usingDirectStream = false;
+                    switchServer(1);
+                }
+            });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = src; // Safari native HLS
+        } else {
+            setState('err', 'HLS unsupported — using embed');
+            switchServer(1);
+            return;
+        }
+
+        attachVideoProgress(video);
+        maybeOfferResume(video);
+    }
+
+    function maybeOfferResume(video) {
+        loadSavedProgress().then(saved => {
+            if (!saved || !saved.t || saved.t < 10 || (saved.pct || 0) > 0.97) {
+                // nothing meaningful to resume — just start
+                markStarted();
+                startProgressTracking(video);
+                return;
+            }
+            resumeAt = saved.t;
+            const mins = Math.floor(saved.t / 60);
+            const secs = String(Math.floor(saved.t % 60)).padStart(2, '0');
+            document.getElementById('resume-text').innerText = `Resume from ${mins}:${secs}?`;
+            const bar = document.getElementById('resume-bar');
+            bar.classList.add('show');
+            document.getElementById('resume-yes').onclick = () => {
+                bar.classList.remove('show');
+                video.currentTime = resumeAt;
+                startProgressTracking(video);
+            };
+            document.getElementById('resume-no').onclick = () => {
+                bar.classList.remove('show');
+                startProgressTracking(video);
+            };
+        });
+    }
+
+    function hideResumeBar() {
+        document.getElementById('resume-bar').classList.remove('show');
+    }
+
+    function attachVideoProgress(video) {
+        // Save every 5 seconds of playback, and on pause/leave
+        video.addEventListener('timeupdate', () => {
+            if (!usingDirectStream || !video.duration || isNaN(video.duration)) return;
+            const pct = video.currentTime / video.duration;
+            saveProgress(Math.floor(video.currentTime), pct);
+        });
+        video.addEventListener('pause', () => {
+            if (!usingDirectStream || !video.duration) return;
+            saveProgress(Math.floor(video.currentTime), video.currentTime / video.duration, true);
+        });
+        video.addEventListener('ended', () => {
+            if (!usingDirectStream) return;
+            saveProgress(Math.floor(video.duration || 0), 1, true);
+        });
+        window.addEventListener('beforeunload', () => {
+            if (!usingDirectStream || !video.duration) return;
+            saveProgress(Math.floor(video.currentTime), video.currentTime / video.duration, true);
+        });
+    }
+
+    function startProgressTracking(video) {
+        // Cloud sync flush every 30s even if user never pauses
+        stopProgressTracking();
+        progressSaveTimer = setInterval(() => {
+            if (!usingDirectStream || !video.duration || video.paused) return;
+            saveProgress(Math.floor(video.currentTime), video.currentTime / video.duration, true);
+        }, 30000);
+    }
+
+    function stopProgressTracking() {
+        if (progressSaveTimer) { clearInterval(progressSaveTimer); progressSaveTimer = null; }
+    }
+
+    function destroyHls() {
+        if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
+        usingDirectStream = false;
+    }
+
+    // For iframe mode: at least mark the title as started so it appears in Continue Watching
+    function markStarted() {
+        if (!currentMovie) return;
+        const all = getLocalProgress();
+        if (!all[progressKey()]) {
+            saveProgress(0, 0.02, true);
+        }
+    }
+
+    // ==========================================
+    // UI
+    // ==========================================
     function setupUI() {
-        document.getElementById('bookmark-btn').onclick = async () => {
-            if (currentMovie && window.Store && typeof Store.addToList === 'function') {
-                await Store.addToList('bookmarks', currentMovie);
-                showToast('Saved to list');
-            }
+        document.getElementById('bookmark-btn').onclick = () => {
+            if (!currentMovie) return;
+            const added = addToList('bookmarks', currentMovie);
+            showToast(added ? 'Saved to list' : 'Already in your list');
         };
-        document.getElementById('later-btn').onclick = async () => {
-            if (currentMovie && window.Store && typeof Store.addToList === 'function') {
-                await Store.addToList('watchlater', currentMovie);
-                showToast('Added to Watch Later');
-            }
+        document.getElementById('later-btn').onclick = () => {
+            if (!currentMovie) return;
+            const added = addToList('watchlater', currentMovie);
+            showToast(added ? 'Added to Watch Later' : 'Already in Watch Later');
         };
     }
 
