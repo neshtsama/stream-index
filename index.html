@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StreamIndex - Live Scraper</title>
+    <title>StreamIndex - Watch Movies & TV Shows</title>
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 
@@ -175,10 +175,14 @@
             padding: 1.5rem 4% 0;
         }
         .search-input {
-            flex: 1 1 220px; max-width: 320px;
+            flex: 1 1 220px; 
+            width: 100%;
+            height: 44px !important;
+            max-height: 44px !important;
             background: var(--bg-card); border: 1px solid rgba(255,255,255,0.15);
-            color: var(--text-main); padding: 0.6rem 1rem; border-radius: 4px;
-            font: inherit; font-size: 0.9rem;
+            color: var(--text-main); padding: 0 1rem; border-radius: 8px;
+            font: inherit; font-size: 0.9rem; box-sizing: border-box;
+            align-self: flex-start;
         }
         .search-input::placeholder { color: var(--text-sub); }
         .genre-chips { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -232,10 +236,10 @@
             overscroll-behavior-x: contain;
             -webkit-overflow-scrolling: touch;
             padding: 14px 2px 16px;
-            scrollbar-width: none;      /* Firefox */
-            -ms-overflow-style: none;   /* legacy Edge */
+            scrollbar-width: none;
+            -ms-overflow-style: none;
         }
-        .movie-rail::-webkit-scrollbar { display: none; }  /* Chrome, Safari, Edge */
+        .movie-rail::-webkit-scrollbar { display: none; }
 
         .movie-rail .movie-card {
             flex: 0 0 160px;
@@ -444,10 +448,6 @@
                         <button class="btn btn-secondary" onclick="addToWatchLater('hero')">
                             <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                             Watch Later
-                        </button>
-                        <button class="btn btn-outline" onclick="downloadMovie('hero')">
-                            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                            Download
                         </button>
                     </div>
                 </div>
@@ -1145,7 +1145,6 @@
                 if (!movie && currentMovie && String(currentMovie.id) === String(id)) movie = currentMovie;
                 if (!movie) return;
                 
-                // Construct card natively to pass progress
                 const card = buildMovieCard(movie, continueWatching[id].pct, 'home');
                 frag.appendChild(card);
             });
@@ -1373,46 +1372,6 @@
             toast.innerText = msg;
             toast.classList.add('show');
             setTimeout(() => toast.classList.remove('show'), 3000);
-        }
-
-        // --- DOWNLOAD LOGIC UPDATE ---
-        
-        // Download endpoints for providers that support direct downloads
-        const DOWNLOAD_PROVIDERS = {
-            'vidsrc.me': {
-                movie: (id) => `https://vidsrc.me/download/movie?tmdb=${id}`,
-                tv: (id, s, e) => `https://vidsrc.me/download/tv?tmdb=${id}&season=${s}&episode=${e}`
-            },
-            'vidsrc.cc': {
-                movie: (id) => `https://vidsrc.cc/v2/embed/movie/${id}`,
-                tv: (id, s, e) => `https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}`
-            },
-            'default': {
-                // Fallback public download portal
-                movie: (id) => `https://dl.vidsrc.vip/movie/${id}`,
-                tv: (id, s, e) => `https://dl.vidsrc.vip/tv/${id}/${s}/${e}`
-            }
-        };
-
-        function downloadMovie(movieId) {
-            const movie = resolveMovie(movieId);
-            if (!movie) return;
-
-            // Since this is the index page, we default to the fallback provider 
-            // and S1:E1 for series, as specific episodes are chosen on the watch page.
-            const providerConfig = DOWNLOAD_PROVIDERS['default'];
-            let downloadUrl = '';
-            
-            if (movie.type === 'series' || movie.type === 'tv') {
-                downloadUrl = providerConfig.tv(movie.id, 1, 1);
-                showToast(`Opening download page for ${movie.title} (S1:E1)...`);
-            } else {
-                downloadUrl = providerConfig.movie(movie.id);
-                showToast(`Opening download page for ${movie.title}...`);
-            }
-
-            // Open download endpoint in a new background tab
-            window.open(downloadUrl, '_blank', 'noopener,noreferrer');
         }
     </script>
 </body>
