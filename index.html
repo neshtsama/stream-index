@@ -49,6 +49,27 @@
             }
         }
 
+        @media (max-width: 768px) {
+    /* Reduce header spacing on mobile */
+    header {
+        padding: 10px 15px !important;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    /* Keep the logo size manageable */
+    header .logo, .navbar-brand {
+        font-size: 1.2rem !important;
+    }
+
+    /* Optional: Hide less important desktop links on mobile to save space, 
+       or turn them into a dropdown. For now, let's keep the sign-in button visible. */
+    .nav-links-desktop {
+        display: none; /* Hides bulky nav links on tiny screens if desired */
+    }
+}
+
         header {
             position: fixed;
             top: 0; left: 0; width: 100%;
