@@ -771,7 +771,7 @@
         const video = document.getElementById('video-player');
         stopProgressTracking();
         destroyHls();
-        video.pause?.().catch(() => {});
+        try { video.pause(); } catch (e) {}
         video.hidden = true;
         iframe.hidden = false;
         hideResumeBar();
