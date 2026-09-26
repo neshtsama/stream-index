@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 const { chromium } = require('playwright');
 
 const app = express();
@@ -10,14 +9,11 @@ const CAPTURE_TIMEOUT = 25000;
 app.use(cors());
 app.use(express.json());
 
-// Serve watch.html and frontend files directly from local server
-app.use(express.static(path.join(__dirname, '..')));
-
 function getEmbedUrl(serverId, type, id, season, episode) {
     const sId = parseInt(serverId, 10) || 1;
+    const s = season || 1;
+    const e = episode || 1;
     if (type === 'tv') {
-        const s = season || 1;
-        const e = episode || 1;
         switch (sId) {
             case 1: return `https://vidsrc.sbs/embed/tv/${id}/${s}/${e}`;
             case 2: return `https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}`;
@@ -93,7 +89,6 @@ app.get('/api/stream', async (req, res) => {
 
         const startTime = Date.now();
         while (!extractedM3u8 && Date.now() - startTime < CAPTURE_TIMEOUT) {
-            // Interact with frames to trigger playback
             for (const frame of page.frames()) {
                 try {
                     await frame.evaluate(() => {
@@ -106,7 +101,6 @@ app.get('/api/stream', async (req, res) => {
                 } catch (e) {}
             }
 
-            // Central fallback click
             await page.mouse.click(640, 360).catch(() => {});
             await new Promise(r => setTimeout(r, 1000));
         }
@@ -114,7 +108,9 @@ app.get('/api/stream', async (req, res) => {
         await browser.close();
 
         if (extractedM3u8) {
-            const proxiedUrl = `http://localhost:${PORT}/api/m3u8-proxy?url=${encodeURIComponent(extractedM3u8)}&referer=${encodeURIComponent(targetUrl)}`;
+            // DEPLOYMENT FIX: build the proxy URL from the incoming request host,
+            // so it works on Render (https) and locally — no hardcoded localhost.
+            const proxiedUrl = `${req.protocol}://${req.get('host')}/api/m3u8-proxy?url=${encodeURIComponent(extractedM3u8)}&referer=${encodeURIComponent(targetUrl)}`;
             return res.json({ status: 'success', targetUrl: proxiedUrl, isRawStream: true });
         }
 
@@ -161,6 +157,9 @@ app.get('/api/m3u8-proxy', async (req, res) => {
     }
 });
 
+// Health check — useful on Render to confirm the service is up
+app.get('/api/health', (req, res) => res.json({ ok: true }));
+
 app.listen(PORT, () => {
-    console.log(`StreamIndex running on http://localhost:${PORT}`);
+    console.log(`StreamIndex backend running on port ${PORT}`);
 });
