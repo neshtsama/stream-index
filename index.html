@@ -1359,9 +1359,20 @@
         function renderContinueWatching() {
             const section = document.getElementById('continue-section');
             const grid = document.getElementById('continue-grid');
-            const ids = Object.keys(continueWatching);
 
-            if (ids.length === 0 || viewMode !== 'home') {
+            // Group per-episode progress keys by show — each show appears once,
+            // with its furthest-watched episode's progress.
+            const byShow = new Map();
+            Object.keys(continueWatching).forEach(key => {
+                const baseId = baseIdFromProgressKey(key);
+                const cur = continueWatching[key];
+                const prev = byShow.get(baseId);
+                if (!prev || (cur.pct || 0) > (prev.pct || 0)) {
+                    byShow.set(baseId, { pct: cur.pct, movie: cur.movie });
+                }
+            });
+
+            if (byShow.size === 0 || viewMode !== 'home') {
                 section.style.display = 'none';
                 return;
             }
@@ -1369,14 +1380,14 @@
 
             grid.innerHTML = '';
             const frag = document.createDocumentFragment();
-            ids.forEach(id => {
-                let movie = movies.find(m => String(m.id) === String(id));
-                if (!movie) movie = watchedMeta[id];
-                if (!movie && continueWatching[id].movie) movie = continueWatching[id].movie;
-                if (!movie && currentMovie && String(currentMovie.id) === String(id)) movie = currentMovie;
+            byShow.forEach((entry, baseId) => {
+                let movie = movies.find(m => String(m.id) === String(baseId));
+                if (!movie) movie = watchedMeta[baseId];
+                if (!movie && entry.movie) movie = entry.movie;
+                if (!movie && currentMovie && String(currentMovie.id) === String(baseId)) movie = currentMovie;
                 if (!movie) return;
 
-                const card = buildMovieCard(movie, continueWatching[id].pct, 'home');
+                const card = buildMovieCard(movie, entry.pct, 'home');
                 frag.appendChild(card);
             });
             grid.appendChild(frag);
@@ -1508,12 +1519,29 @@
         }
 
         function continueWatchingList() {
-            return Object.keys(continueWatching)
-                .map(key => {
-                    const baseId = baseIdFromProgressKey(key);
-                    return movies.find(m => String(m.id) === String(baseId)) || watchedMeta[baseId] || continueWatching[key].movie;
+            // Deduplicate by show, same as the Continue Watching rail
+            const byShow = new Map();
+            Object.keys(continueWatching).forEach(key => {
+                const baseId = baseIdFromProgressKey(key);
+                const cur = continueWatching[key];
+                const prev = byShow.get(baseId);
+                if (!prev || (cur.pct || 0) > (prev.pct || 0)) {
+                    byShow.set(baseId, { pct: cur.pct, movie: cur.movie });
+                }
+            });
+            const seen = new Set();
+            return [...byShow.keys()]
+                .map(baseId => {
+                    const entry = byShow.get(baseId);
+                    return movies.find(m => String(m.id) === String(baseId))
+                        || watchedMeta[baseId]
+                        || entry.movie;
                 })
-                .filter(Boolean);
+                .filter(m => {
+                    if (!m || seen.has(String(m.id))) return false;
+                    seen.add(String(m.id));
+                    return true;
+                });
         }
 
         function resolveMovie(movieId) {
