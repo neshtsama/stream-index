@@ -515,8 +515,14 @@
             return;
         }
 
-        if (supabase) {
-            supabase.auth.getSession().then(({ data: { session } }) => { currentUser = session?.user || null; });
+                if (supabase) {
+            // Wait for the session BEFORE the player starts saving progress —
+            // otherwise markStarted() fires before currentUser exists and the
+            // cloud save is silently skipped.
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                currentUser = session?.user || null;
+            } catch (e) { console.warn(e); }
             supabase.auth.onAuthStateChange((_e, session) => { currentUser = session?.user || null; });
         }
 
