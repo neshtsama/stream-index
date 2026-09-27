@@ -6,7 +6,7 @@
     <title>StreamIndex - Watch Movies & TV Shows</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <<script type="module">
+    <script type="module">
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
     window.supabase = createClient('https://iqmxvknctktpriijalic.supabase.co', 'sb_publishable_IXicSQIcfL_yhFUgRH8Qfg_3qwmqqML');
     </script>
@@ -57,16 +57,15 @@
         justify-content: space-between;
         align-items: center;
     }
-    
+
     /* Keep the logo size manageable */
     header .logo, .navbar-brand {
         font-size: 1.2rem !important;
     }
 
-    /* Optional: Hide less important desktop links on mobile to save space, 
-       or turn them into a dropdown. For now, let's keep the sign-in button visible. */
+    /* Hide less important desktop links on mobile to save space */
     .nav-links-desktop {
-        display: none; /* Hides bulky nav links on tiny screens if desired */
+        display: none;
     }
 }
 
@@ -461,8 +460,7 @@
         <nav>
             <ul>
                 <li><button class="nav-link active" id="nav-home" onclick="switchTab('home')">Home</button></li>
-                <li><button class="nav-link" id="nav-bookmarks" onclick="switchTab('bookmarks')">Bookmarks</button></li>
-                <li><button class="nav-link" id="nav-watchlater" onclick="switchTab('watchlater')">Watch Later</button></li>
+                <li><button class="nav-link" id="nav-library" onclick="switchTab('library')">My Library</button></li>
             </ul>
         </nav>
         <div class="user-profile kb-interactive" tabindex="0" role="button" id="user-btn" aria-label="Account" onclick="handleProfileClick()">
@@ -490,11 +488,7 @@
                         </button>
                         <button class="btn btn-secondary" onclick="addToBookmarks('hero')">
                             <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
-                            Add to List
-                        </button>
-                        <button class="btn btn-secondary" onclick="addToWatchLater('hero')">
-                            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                            Watch Later
+                            Add to Library
                         </button>
                     </div>
                 </div>
@@ -542,26 +536,15 @@
         </section>
     </main>
 
-    <div id="bookmarks" class="page-section">
+    <!-- Library Page -->
+    <div id="library" class="page-section">
         <div class="category-section">
             <div class="rail-header">
-                <h2 class="category-title">Your bookmarks</h2>
-                <span class="see-all" id="bookmarks-count"></span>
+                <h2 class="category-title">My Library</h2>
+                <span class="see-all" id="library-count"></span>
             </div>
-            <div class="movie-grid" id="bookmarks-grid">
-                <p class="empty-note">No bookmarks yet.</p>
-            </div>
-        </div>
-    </div>
-
-    <div id="watchlater" class="page-section">
-        <div class="category-section">
-            <div class="rail-header">
-                <h2 class="category-title">Watch later</h2>
-                <span class="see-all" id="watchlater-count"></span>
-            </div>
-            <div class="movie-grid" id="watchlater-grid">
-                <p class="empty-note">Queue is empty.</p>
+            <div class="movie-grid" id="library-grid">
+                <p class="empty-note">Your library is empty. Tap ★ on any poster to save it here.</p>
             </div>
         </div>
     </div>
@@ -581,8 +564,7 @@
                         <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                         Play
                     </button>
-                    <button class="btn btn-secondary" onclick="addToBookmarks('detail')">Add to list</button>
-                    <button class="btn btn-secondary" onclick="addToWatchLater('detail')">Watch later</button>
+                    <button class="btn btn-secondary" onclick="addToBookmarks('detail')">Add to Library</button>
                 </div>
             </div>
         </div>
@@ -616,7 +598,7 @@
         const SUPABASE_KEY = 'sb_publishable_IXicSQIcfL_yhFUgRH8Qfg_3qwmqqML';
         var supabase = null;
         try {
-            supabase = window.supabase.createClient('https://iqmxvknctktpriijalic.supabase.co', 'sb_publishable_IXicSQIcfL_yhFUgRH8Qfg_3qwmqqML');
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         } catch (e) {
             console.error('Supabase init failed — running in guest mode:', e);
         }
@@ -821,15 +803,17 @@
 
         let currentMovie = null;
         let currentUser = null;
-        let bookmarks = [];
-        let watchLater = [];
+        let bookmarks = [];        // "My Library" — everything saved lives here
         let continueWatching = {};
         let watchedMeta = {};
 
         function loadStores() {
             watchedMeta = LocalStore.getMeta();
+            // One-time migration: fold old "Watch Later" items into the Library
+            const oldWl = LocalStore.getList('watchlater');
+            oldWl.forEach(m => LocalStore.addToList('bookmarks', m));
+            if (oldWl.length) LocalStore.setList('watchlater', []);
             bookmarks = LocalStore.getList('bookmarks');
-            watchLater = LocalStore.getList('watchlater');
             continueWatching = LocalStore.getAllProgress();
         }
 
@@ -864,8 +848,7 @@
                 dropdown.classList.remove('open');
                 if (before) {
                     loadStores();
-                    updateBookmarksUI();
-                    updateWatchLaterUI();
+                    updateLibraryUI();
                     renderContinueWatching();
                 }
             }
@@ -965,11 +948,11 @@
                     .eq('user_id', currentUser.id);
                 if (lErr) throw lErr;
 
-                const cloudBm = [], cloudWl = [];
+                // Old 'watchlater' rows merge into the Library too
+                const cloudBm = [];
                 (lists || []).forEach(row => {
                     if (!row.movie) return;
-                    if (row.list === 'bookmarks') cloudBm.push(row.movie);
-                    if (row.list === 'watchlater') cloudWl.push(row.movie);
+                    if (row.list === 'bookmarks' || row.list === 'watchlater') cloudBm.push(row.movie);
                 });
 
                 const merge = (local, cloud) => {
@@ -979,11 +962,8 @@
                     return [...map.values()];
                 };
                 bookmarks = merge(bookmarks, cloudBm);
-                watchLater = merge(watchLater, cloudWl);
                 for (const m of bookmarks) await cloudAddToList('bookmarks', m);
-                for (const m of watchLater) await cloudAddToList('watchlater', m);
                 LocalStore.setList('bookmarks', bookmarks);
-                LocalStore.setList('watchlater', watchLater);
 
                 const { data: prog, error: pErr } = await supabase
                     .from('watch_progress')
@@ -1002,8 +982,7 @@
                 });
                 LocalStore.setAllProgress(continueWatching);
 
-                updateBookmarksUI();
-                updateWatchLaterUI();
+                updateLibraryUI();
                 renderContinueWatching();
             } catch (err) {
                 console.error('Cloud sync failed:', err);
@@ -1096,8 +1075,7 @@
 
         document.addEventListener('DOMContentLoaded', async () => {
             loadStores();
-            updateBookmarksUI();
-            updateWatchLaterUI();
+            updateLibraryUI();
             initAuth();
 
             await initCatalog();
@@ -1213,21 +1191,15 @@
             const overview = escapeHtml(m.overview) || 'No synopsis available for this title yet.';
 
             let actionsHtml = '';
-            if (context === 'bookmarks') {
+            if (context === 'library') {
                 actionsHtml = `
                     <button class="icon-btn" type="button" title="Play Now" aria-label="Play ${title}" onclick="event.stopPropagation(); openPlayer(${m.id})">▶</button>
-                    <button class="icon-btn" type="button" title="Remove from Bookmarks" aria-label="Remove ${title}" onclick="event.stopPropagation(); removeFromSaved('bookmarks', ${m.id})">✖</button>
-                `;
-            } else if (context === 'watchlater') {
-                actionsHtml = `
-                    <button class="icon-btn" type="button" title="Play Now" aria-label="Play ${title}" onclick="event.stopPropagation(); openPlayer(${m.id})">▶</button>
-                    <button class="icon-btn" type="button" title="Remove from Watch Later" aria-label="Remove ${title}" onclick="event.stopPropagation(); removeFromSaved('watchlater', ${m.id})">✖</button>
+                    <button class="icon-btn" type="button" title="Remove from Library" aria-label="Remove ${title}" onclick="event.stopPropagation(); removeFromSaved('library', ${m.id})">✖</button>
                 `;
             } else {
                 actionsHtml = `
                     <button class="icon-btn" type="button" title="Play Now" aria-label="Play ${title}" onclick="event.stopPropagation(); openPlayer(${m.id})">▶</button>
-                    <button class="icon-btn" type="button" title="Add to bookmarks" aria-label="Add ${title} to bookmarks" onclick="event.stopPropagation(); addToBookmarks(${m.id})">★</button>
-                    <button class="icon-btn" type="button" title="Watch later" aria-label="Add ${title} to watch later" onclick="event.stopPropagation(); addToWatchLater(${m.id})">⏱</button>
+                    <button class="icon-btn" type="button" title="Add to Library" aria-label="Add ${title} to library" onclick="event.stopPropagation(); addToBookmarks(${m.id})">★</button>
                 `;
             }
 
@@ -1551,6 +1523,8 @@
             return movies.find(m => String(m.id) === String(movieId)) || currentMovie;
         }
 
+        // --- My Library (single list: local 'bookmarks' + cloud 'bookmarks') ---
+
         function addToBookmarks(movieId) {
             const movie = resolveMovie(movieId);
             if (!movie) return;
@@ -1559,52 +1533,24 @@
             if (added) {
                 bookmarks = LocalStore.getList('bookmarks');
                 cloudAddToList('bookmarks', movie);
-                updateBookmarksUI();
-                showToast(`Added "${movie.title}" to Bookmarks`);
+                updateLibraryUI();
+                showToast(`Added "${movie.title}" to your Library`);
             } else {
-                showToast('Already in bookmarks');
-            }
-        }
-
-        function addToWatchLater(movieId) {
-            const movie = resolveMovie(movieId);
-            if (!movie) return;
-
-            const added = LocalStore.addToList('watchlater', movie);
-            if (added) {
-                watchLater = LocalStore.getList('watchlater');
-                cloudAddToList('watchlater', movie);
-                updateWatchLaterUI();
-                showToast(`Added "${movie.title}" to Watch Later`);
-            } else {
-                showToast('Already in Watch Later');
+                showToast('Already in your Library');
             }
         }
 
         function removeFromSaved(list, movieId) {
-            if (list === 'bookmarks') {
-                bookmarks = LocalStore.removeFromList('bookmarks', movieId);
-                cloudRemoveFromList('bookmarks', movieId);
-                updateBookmarksUI();
-                showToast('Removed from Bookmarks');
-            } else if (list === 'watchlater') {
-                watchLater = LocalStore.removeFromList('watchlater', movieId);
-                cloudRemoveFromList('watchlater', movieId);
-                updateWatchLaterUI();
-                showToast('Removed from Watch Later');
-            }
+            bookmarks = LocalStore.removeFromList('bookmarks', movieId);
+            cloudRemoveFromList('bookmarks', movieId);
+            updateLibraryUI();
+            showToast('Removed from your Library');
         }
 
-        function updateBookmarksUI() {
-            renderGrid('bookmarks-grid', bookmarks, 'No bookmarks yet. Tap ★ on any poster to save it here.', 'bookmarks');
-            const count = document.getElementById('bookmarks-count');
+        function updateLibraryUI() {
+            renderGrid('library-grid', bookmarks, 'Your library is empty. Tap ★ on any poster to save it here.', 'library');
+            const count = document.getElementById('library-count');
             if (count) count.innerText = bookmarks.length ? `${bookmarks.length} saved` : '';
-        }
-
-        function updateWatchLaterUI() {
-            renderGrid('watchlater-grid', watchLater, 'Queue is empty. Tap ⏱ on any poster to line it up.', 'watchlater');
-            const count = document.getElementById('watchlater-count');
-            if (count) count.innerText = watchLater.length ? `${watchLater.length} queued` : '';
         }
 
         function switchTab(tabName) {
@@ -1614,8 +1560,7 @@
             document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
             document.getElementById(`nav-${tabName}`).classList.add('active');
 
-            if (tabName === 'bookmarks') updateBookmarksUI();
-            if (tabName === 'watchlater') updateWatchLaterUI();
+            if (tabName === 'library') updateLibraryUI();
 
             window.scrollTo({ top: 0, behavior: 'auto' });
         }
