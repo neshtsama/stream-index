@@ -353,11 +353,20 @@
     const SUPABASE_URL = 'https://iqmxvknctktpriijalic.supabase.co';
     const SUPABASE_KEY = 'sb_publishable_IXicSQIcfL_yhFUgRH8Qfg_3qwmqqML';
     var supabase = null; // guarded — never kills the page
-    try {
-        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    } catch (e) {
-        console.warn('Supabase init failed — running in guest mode:', e);
+    document.addEventListener('DOMContentLoaded', () => {
+  try {
+    // Ensure the Supabase library script has loaded on window
+    const supabaseLib = window.supabase || supabase;
+    if (supabaseLib && typeof supabaseLib.createClient === 'function') {
+      const supabaseClient = supabaseLib.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      // Your existing login/session logic here
+    } else {
+      console.warn('Supabase SDK not available, running in guest mode.');
     }
+  } catch (err) {
+    console.error('Supabase init failed - running in guest mode:', err);
+  }
+});
 
     // Your extraction backend (server.js), hosted on Render.
     const BACKEND_URL = 'https://stream-index-hava.onrender.com';
