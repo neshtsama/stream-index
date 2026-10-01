@@ -8,7 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <script type="module">
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-    window.supabase = createClient('https://iqmxvknctktpriijalic.supabase.co', 'sb_publishable_IXicSQIcfL_yhFUgRH8Qfg_3qwmqqML');
+    window.supabase = createClient('https://iqmxvknctktprijalic.supabase.co', 'sb_publishable_IXicSQIcfL_yhFUgRH8Qfg_3qwmqqML');
     </script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 
@@ -43,7 +43,6 @@
             border-radius: 2px;
         }
 
-        /* --- Header --- */
         header {
             position: fixed;
             top: 0; left: 0; width: 100%;
@@ -64,7 +63,6 @@
         }
         .back-link:hover { color: var(--text-main); }
 
-        /* --- Player stage --- */
         .stage {
             width: 100%;
             background: #000;
@@ -90,7 +88,6 @@
         .player video { object-fit: contain; }
         .player video[hidden] { display: none; }
 
-        /* Resume banner shown over the player before continuing */
         .resume-bar {
             position: absolute; left: 0; right: 0; bottom: 0;
             background: rgba(0,0,0,0.8); backdrop-filter: blur(4px);
@@ -105,7 +102,6 @@
         .resume-yes { background: var(--text-main); color: #000; }
         .resume-no { background: rgba(255,255,255,0.15); color: #fff; }
 
-        /* --- Source / subtitle bar --- */
         .watch-bar {
             max-width: 1200px; margin: 0 auto;
             display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px;
@@ -133,7 +129,6 @@
         .dot.err { background: var(--primary); }
         @keyframes blink { 50% { opacity: 0.3; } }
 
-        /* --- Title block --- */
         .title-block { max-width: 1200px; margin: 0 auto; padding: 24px 4% 0; }
         .watch-title { font-size: 1.7rem; line-height: 1.2; }
         @media (min-width: 768px) { .watch-title { font-size: 2.2rem; } }
@@ -145,7 +140,6 @@
         .watch-overview { color: var(--text-sub); line-height: 1.65; max-width: 68ch; }
         .episode-context { font-size: 0.95rem; color: var(--text-sub); margin: 2px 0 10px; }
 
-        /* --- Season / episode picker --- */
         .episode-bar { max-width: 1200px; margin: 0 auto; padding: 16px 4% 20px; border-bottom: 1px solid rgba(255,255,255,0.07); }
         .episode-bar-head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
         .season-select-wrap { position: relative; }
@@ -187,7 +181,6 @@
         .episode-card .ep-runtime { display: block; padding: 0 10px 10px; font-size: 0.72rem; color: var(--text-sub); }
         .episode-card .ep-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: var(--primary); z-index: 3; }
 
-        /* --- Similar grid --- */
         .similar-section { max-width: 1200px; margin: 0 auto; padding: 34px 4% 60px; }
         .section-title { font-size: 1.15rem; font-weight: 600; margin-bottom: 16px; }
 
@@ -230,26 +223,11 @@
         }
 
         @media (max-width: 768px) {
-    /* Reduce header spacing on mobile */
-    header {
-        padding: 10px 15px !important;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
+            header { padding: 10px 15px !important; display: flex; justify-content: space-between; align-items: center; }
+            header .logo, .navbar-brand { font-size: 1.2rem !important; }
+            .nav-links-desktop { display: none; }
+        }
 
-    /* Keep the logo size manageable */
-    header .logo, .navbar-brand {
-        font-size: 1.2rem !important;
-    }
-
-    /* Hide less important desktop links on mobile to save space */
-    .nav-links-desktop {
-        display: none;
-    }
-}
-
-        /* Hover overlay for similar title cards */
         .poster-wrap { position: relative; width: 100%; }
 
         .card-overlay {
@@ -350,25 +328,6 @@
     // ==========================================
     // CONFIG
     // ==========================================
-    const SUPABASE_URL = 'https://iqmxvknctktpriijalic.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable_IXicSQIcfL_yhFUgRH8Qfg_3qwmqqML';
-    var supabase = null; // guarded — never kills the page
-    document.addEventListener('DOMContentLoaded', () => {
-  try {
-    // Ensure the Supabase library script has loaded on window
-    const supabaseLib = window.supabase || supabase;
-    if (supabaseLib && typeof supabaseLib.createClient === 'function') {
-      const supabaseClient = supabaseLib.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      // Your existing login/session logic here
-    } else {
-      console.warn('Supabase SDK not available, running in guest mode.');
-    }
-  } catch (err) {
-    console.error('Supabase init failed - running in guest mode:', err);
-  }
-});
-
-    // Your extraction backend (server.js), hosted on Render.
     const BACKEND_URL = 'https://stream-index-hava.onrender.com';
 
     const TMDB_API_KEY = '8950f9f8257d45a24d373932a74ba2ec';
@@ -410,10 +369,10 @@
     const SERVERS = [
         { id: 0, label: 'Direct (best)', direct: true },
         { id: 1, label: 'Server 1 (VidLink)' },
-        { id: 2, label: 'Server 2 (AutoEmbed)' },
-        { id: 3, label: 'Server 3 (VidSrc VIP)' },
-        { id: 4, label: 'Server 4 (MultiEmbed)' },
-        { id: 5, label: 'Server 5 (2Embed)' }
+        { id: 2, label: 'Server 2 (Embed.su)' },
+        { id: 3, label: 'Server 3 (VidSrc v2)' },
+        { id: 4, label: 'Server 4 (AutoEmbed)' },
+        { id: 5, label: 'Server 5 (SmashyStream)' }
     ];
     let activeServerId = 0;
 
@@ -430,19 +389,19 @@
         if (mediaType === 'tv') {
             switch(serverId) {
                 case 1: return `https://vidlink.pro/tv/${mediaId}/${selectedSeason}/${selectedEpisode}`;
-                case 2: return `https://player.autoembed.cc/embed/tv/${mediaId}/${selectedSeason}/${selectedEpisode}`;
-                case 3: return `https://vidsrc.vip/embed/tv/${mediaId}/${selectedSeason}/${selectedEpisode}`;
-                case 4: return `https://multiembed.mov/directstream.php?video_id=${idToUse}&s=${selectedSeason}&e=${selectedEpisode}`;
-                case 5: return `https://www.2embed.cc/embedtv/${mediaId}&s=${selectedSeason}&e=${selectedEpisode}`;
+                case 2: return `https://embed.su/embed/tv/${mediaId}/${selectedSeason}/${selectedEpisode}`;
+                case 3: return `https://vidsrc.cc/v2/embed/tv/${mediaId}/${selectedSeason}/${selectedEpisode}`;
+                case 4: return `https://player.autoembed.cc/embed/tv/${mediaId}/${selectedSeason}/${selectedEpisode}`;
+                case 5: return `https://embed.smashystream.com/playere.php?tmdb=${mediaId}&season=${selectedSeason}&episode=${selectedEpisode}`;
                 default: return `https://vidlink.pro/tv/${mediaId}/${selectedSeason}/${selectedEpisode}`;
             }
         } else {
             switch(serverId) {
                 case 1: return `https://vidlink.pro/movie/${mediaId}`;
-                case 2: return `https://player.autoembed.cc/embed/movie/${mediaId}`;
-                case 3: return `https://vidsrc.vip/embed/movie/${mediaId}`;
-                case 4: return `https://multiembed.mov/directstream.php?video_id=${idToUse}`;
-                case 5: return `https://www.2embed.cc/embedpage/${mediaId}`;
+                case 2: return `https://embed.su/embed/movie/${mediaId}`;
+                case 3: return `https://vidsrc.cc/v2/embed/movie/${mediaId}`;
+                case 4: return `https://player.autoembed.cc/embed/movie/${mediaId}`;
+                case 5: return `https://embed.smashystream.com/playere.php?tmdb=${mediaId}`;
                 default: return `https://vidlink.pro/movie/${mediaId}`;
             }
         }
@@ -487,7 +446,6 @@
         if (error) console.error('Cloud progress save failed:', error.message);
     }
 
-    // Call this whenever playback advances meaningfully (throttled by caller)
     function saveProgress(t, pct, immediate = false) {
         if (!currentMovie) return;
         saveProgressLocal(t, pct);
@@ -524,7 +482,7 @@
             return;
         }
 
-                if (supabase) {
+        if (supabase) {
             // Wait for the session BEFORE the player starts saving progress —
             // otherwise markStarted() fires before currentUser exists and the
             // cloud save is silently skipped.
@@ -834,7 +792,9 @@
         });
 
         try {
-            const res = await fetchWithTimeout(`${BACKEND_URL}/api/stream?${qs}`, 45000);
+            // 8s timeout: if the backend is asleep or slow, fall back almost
+            // immediately instead of making the user wait 45 seconds.
+            const res = await fetchWithTimeout(`${BACKEND_URL}/api/stream?${qs}`, 8000);
             if (!res.ok) throw new Error(`backend ${res.status}`);
             const data = await res.json();
 
@@ -928,7 +888,6 @@
     }
 
     function attachVideoProgress(video) {
-        // Save every 5 seconds of playback, and on pause/leave
         video.addEventListener('timeupdate', () => {
             if (!usingDirectStream || !video.duration || isNaN(video.duration)) return;
             const pct = video.currentTime / video.duration;
@@ -949,7 +908,6 @@
     }
 
     function startProgressTracking(video) {
-        // Cloud sync flush every 30s even if user never pauses
         stopProgressTracking();
         progressSaveTimer = setInterval(() => {
             if (!usingDirectStream || !video.duration || video.paused) return;
