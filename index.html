@@ -8,7 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <script type="module">
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-    window.supabase = createClient('https://iqmxvknctktpriijalic.supabase.co', 'sb_publishable_IXicSQIcfL_yhFUgRH8Qfg_3qwmqqML');
+    window.supabase = createClient('https://iqmxvknctktprijalic.supabase.co', 'sb_publishable_IXicSQIcfL_yhFUgRH8Qfg_3qwmqqML');
     </script>
 
     <style>
@@ -48,26 +48,6 @@
                 scroll-behavior: auto !important;
             }
         }
-
-        @media (max-width: 768px) {
-    /* Reduce header spacing on mobile */
-    header {
-        padding: 10px 15px !important;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    /* Keep the logo size manageable */
-    header .logo, .navbar-brand {
-        font-size: 1.2rem !important;
-    }
-
-    /* Hide less important desktop links on mobile to save space */
-    .nav-links-desktop {
-        display: none;
-    }
-}
 
         header {
             position: fixed;
@@ -440,6 +420,9 @@
         .toast.show { transform: translateY(0); }
 
         @media (max-width: 768px) {
+            header { padding: 10px 15px !important; display: flex; justify-content: space-between; align-items: center; }
+            header .logo, .navbar-brand { font-size: 1.2rem !important; }
+            .nav-links-desktop { display: none; }
             .movie-grid { grid-template-columns: repeat(2, 1fr); }
             .filter-bar { flex-direction: column; align-items: stretch; }
             .search-input { max-width: none; }
@@ -594,7 +577,7 @@
     <div id="toast" class="toast">Action completed</div>
 
     <script>
-        const SUPABASE_URL = 'https://iqmxvknctktpriijalic.supabase.co';
+        const SUPABASE_URL = 'https://iqmxvknctktprijalic.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_IXicSQIcfL_yhFUgRH8Qfg_3qwmqqML';
         var supabase = null;
         try {
@@ -1196,6 +1179,11 @@
                     <button class="icon-btn" type="button" title="Play Now" aria-label="Play ${title}" onclick="event.stopPropagation(); openPlayer(${m.id})">▶</button>
                     <button class="icon-btn" type="button" title="Remove from Library" aria-label="Remove ${title}" onclick="event.stopPropagation(); removeFromSaved('library', ${m.id})">✖</button>
                 `;
+            } else if (context === 'continue') {
+                actionsHtml = `
+                    <button class="icon-btn" type="button" title="Play Now" aria-label="Play ${title}" onclick="event.stopPropagation(); openPlayer(${m.id})">▶</button>
+                    <button class="icon-btn" type="button" title="Remove from Continue Watching" aria-label="Remove ${title} from Continue Watching" onclick="event.stopPropagation(); removeFromContinueWatching('${m.id}')">✖</button>
+                `;
             } else {
                 actionsHtml = `
                     <button class="icon-btn" type="button" title="Play Now" aria-label="Play ${title}" onclick="event.stopPropagation(); openPlayer(${m.id})">▶</button>
@@ -1387,12 +1375,46 @@
                 if (!movie && currentMovie && String(currentMovie.id) === String(baseId)) movie = currentMovie;
                 if (!movie) return;
 
-                const card = buildMovieCard(movie, entry.pct, 'home');
+                const card = buildMovieCard(movie, entry.pct, 'continue');
                 frag.appendChild(card);
             });
             grid.appendChild(frag);
             updateRailNav('continue-grid');
             if (grid.children.length === 0) section.style.display = 'none';
+        }
+
+        async function removeFromContinueWatching(baseId) {
+            // Remove every progress entry (all seasons/episodes) for this show
+            Object.keys(continueWatching).forEach(key => {
+                if (baseIdFromProgressKey(key) === String(baseId)) delete continueWatching[key];
+            });
+            LocalStore.setAllProgress(continueWatching);
+            renderContinueWatching();
+            showToast('Removed from Continue Watching');
+
+            // Cloud: delete every matching row for this user
+            if (currentUser && supabase) {
+                try {
+                    const { data: rows, error } = await supabase
+                        .from('watch_progress')
+                        .select('media_id')
+                        .eq('user_id', currentUser.id);
+                    if (!error && rows) {
+                        const toDelete = rows
+                            .map(r => r.media_id)
+                            .filter(mid => baseIdFromProgressKey(mid) === String(baseId));
+                        for (const mid of toDelete) {
+                            await supabase
+                                .from('watch_progress')
+                                .delete()
+                                .eq('user_id', currentUser.id)
+                                .eq('media_id', mid);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Cloud continue-watching cleanup failed:', e);
+                }
+            }
         }
 
         let viewMode = 'home';
