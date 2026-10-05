@@ -257,6 +257,15 @@
             cursor: pointer;
             backdrop-filter: blur(4px);
             transition: background 0.2s, transform 0.2s;
+
+            /* Prevent video height from overflowing in mobile landscape */
+@media (max-height: 500px) and (orientation: landscape) {
+    .player {
+        max-height: calc(100vh - var(--nav-height));
+        width: calc((100vh - var(--nav-height)) * (16 / 9));
+        max-width: 100%;
+    }
+}
         }
 
         .overlay-btn:hover { background: var(--primary); transform: scale(1.1); }
