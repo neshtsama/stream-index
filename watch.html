@@ -129,6 +129,23 @@
         .dot.err { background: var(--primary); }
         @keyframes blink { 50% { opacity: 0.3; } }
 
+        /* Download Bar Styles */
+        .download-bar {
+            max-width: 1200px; margin: 0 auto; padding: 16px 4%;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .download-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .download-btn {
+            background: var(--accent); color: #000; border: none; font-weight: 600;
+            padding: 8px 16px; border-radius: 4px; cursor: pointer; transition: 0.2s; font-size: 0.85rem;
+        }
+        .download-btn:hover:not(:disabled) { opacity: 0.9; transform: scale(1.02); }
+        .download-btn:disabled { opacity: 0.5; cursor: not-allowed; background: #555; color: #aaa; }
+        .progress-wrapper { width: 100%; background: #2a2a2a; border-radius: 4px; overflow: hidden; display: none; height: 8px; margin-top: 8px; }
+        .progress-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s; }
+        .progress-text { font-size: 0.8rem; color: var(--text-sub); margin-top: 4px; display: none; }
+
         .title-block { max-width: 1200px; margin: 0 auto; padding: 24px 4% 0; }
         .watch-title { font-size: 1.7rem; line-height: 1.2; }
         @media (min-width: 768px) { .watch-title { font-size: 2.2rem; } }
@@ -257,15 +274,14 @@
             cursor: pointer;
             backdrop-filter: blur(4px);
             transition: background 0.2s, transform 0.2s;
+        }
 
-            /* Prevent video height from overflowing in mobile landscape */
-@media (max-height: 500px) and (orientation: landscape) {
-    .player {
-        max-height: calc(100vh - var(--nav-height));
-        width: calc((100vh - var(--nav-height)) * (16 / 9));
-        max-width: 100%;
-    }
-}
+        @media (max-height: 500px) and (orientation: landscape) {
+            .player {
+                max-height: calc(100vh - var(--nav-height));
+                width: calc((100vh - var(--nav-height)) * (16 / 9));
+                max-width: 100%;
+            }
         }
 
         .overlay-btn:hover { background: var(--primary); transform: scale(1.1); }
@@ -305,6 +321,18 @@
     </div>
 </div>
 
+<!-- Download Proxy Bar -->
+<div class="download-bar" id="download-bar">
+    <div class="download-head">
+        <span style="font-size: 0.9rem; font-weight: 600;">Offline Viewing</span>
+        <button id="download-btn" class="download-btn" disabled>Extracting stream...</button>
+    </div>
+    <div class="progress-wrapper" id="download-progress-wrap">
+        <div class="progress-bar" id="download-progress-bar"></div>
+    </div>
+    <div class="progress-text" id="download-progress-text"></div>
+</div>
+
 <div class="episode-bar" id="episode-bar" style="display:none">
     <div class="episode-bar-head">
         <div class="season-select-wrap">
@@ -335,9 +363,11 @@
 
 <script>
     // ==========================================
-    // CONFIG
+    // CONFIG & PROXY
     // ==========================================
     const BACKEND_URL = 'https://stream-index-hava.onrender.com';
+    const WORKER_URL = 'https://stream-proxy.tsmmunesh.workers.dev/'; // Your new proxy worker
+    let currentDownloadUrl = null;
 
     const TMDB_API_KEY = '8950f9f8257d45a24d373932a74ba2ec';
     const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -374,7 +404,6 @@
     let usingDirectStream = false;
     let progressSaveTimer = null;
 
-    // Embed servers. Server 0 = "Direct" (backend-extracted m3u8 via hls.js)
     const SERVERS = [
         { id: 0, label: 'Direct (best)', direct: true },
         { id: 1, label: 'Server 1 (VidLink)' },
@@ -386,7 +415,6 @@
     let activeServerId = 0;
 
     function progressKey() {
-        // Per-episode keys for TV, plain id for movies. index.html understands the "-s" split.
         return mediaType === 'tv'
             ? `${mediaId}-s${selectedSeason}e${selectedEpisode}`
             : String(mediaId);
@@ -394,7 +422,6 @@
 
     function getEmbedUrl(serverId) {
         const idToUse = imdbId || mediaId;
-
         if (mediaType === 'tv') {
             switch(serverId) {
                 case 1: return `https://vidlink.pro/tv/${mediaId}/${selectedSeason}/${selectedEpisode}`;
@@ -424,7 +451,7 @@
     }
 
     // ==========================================
-    // PROGRESS (localStorage + Supabase cloud)
+    // PROGRESS
     // ==========================================
     function getLocalProgress() {
         return JSON.parse(localStorage.getItem('streamindex_progress') || '{}');
@@ -452,7 +479,6 @@
                 movie: currentMovie,
                 updated_at: new Date().toISOString()
             }, { onConflict: 'user_id,media_id' });
-        if (error) console.error('Cloud progress save failed:', error.message);
     }
 
     function saveProgress(t, pct, immediate = false) {
@@ -462,7 +488,6 @@
     }
 
     async function loadSavedProgress() {
-        // Prefer the furthest of cloud vs local
         const local = getLocalProgress()[progressKey()];
         let best = local ? { t: local.t, pct: local.pct } : null;
 
@@ -477,7 +502,7 @@
                 if (!error && data && (!best || (data.timestamp_seconds || 0) > best.t)) {
                     best = { t: Number(data.timestamp_seconds || 0), pct: Number(data.progress_percent || 0) / 100 };
                 }
-            } catch (e) { console.warn(e); }
+            } catch (e) {}
         }
         return best;
     }
@@ -492,25 +517,19 @@
         }
 
         if (supabase) {
-            // Wait for the session BEFORE the player starts saving progress —
-            // otherwise markStarted() fires before currentUser exists and the
-            // cloud save is silently skipped.
             try {
                 const { data: { session } } = await supabase.auth.getSession();
                 currentUser = session?.user || null;
-            } catch (e) { console.warn(e); }
+            } catch (e) {}
             supabase.auth.onAuthStateChange((_e, session) => { currentUser = session?.user || null; });
         }
 
         try {
             const data = await fetchTMDB(`/${mediaType}/${mediaId}`);
-
             try {
                 const extData = await fetchTMDB(`/${mediaType}/${mediaId}/external_ids`);
                 imdbId = extData.imdb_id || null;
-            } catch (e) {
-                console.warn('Could not fetch IMDb ID:', e);
-            }
+            } catch (e) {}
 
             currentMovie = {
                 id: data.id,
@@ -531,10 +550,6 @@
                 <span class="rating">★ ${currentMovie.rating}</span>
             `;
 
-            const meta = JSON.parse(localStorage.getItem('streamindex_meta') || '{}');
-            meta[currentMovie.id] = currentMovie;
-            localStorage.setItem('streamindex_meta', JSON.stringify(meta));
-
             if (mediaType === 'tv') {
                 showSeasons = (data.seasons || []).filter(s => s.season_number > 0);
                 if (showSeasons.length > 0) {
@@ -548,12 +563,12 @@
 
             loadSimilar();
         } catch (err) {
-            console.error(err);
             document.getElementById('watch-title').innerText = 'Error loading title details';
         }
 
         setupPlayer();
         setupUI();
+        setupDownloader();
     }
 
     // ==========================================
@@ -569,9 +584,7 @@
             currentSeasonEpisodes = data.episodes || [];
             document.getElementById('episode-count').innerText = `${currentSeasonEpisodes.length} Episodes`;
             renderEpisodeStrip();
-        } catch (e) {
-            console.error(e);
-        }
+        } catch (e) {}
     }
 
     function buildSeasonDropdown() {
@@ -585,7 +598,7 @@
                 selectedEpisode = 1;
                 loadSeasonEpisodes(s.season_number);
                 dropdown.classList.remove('open');
-
+                
                 const newUrl = new URL(window.location);
                 newUrl.searchParams.set('season', s.season_number);
                 newUrl.searchParams.set('episode', 1);
@@ -601,9 +614,7 @@
         const seasonBtn = document.getElementById('season-btn');
         seasonBtn.onclick = () => dropdown.classList.toggle('open');
         window.onclick = e => {
-            if (!seasonBtn.contains(e.target) && !dropdown.contains(e.target)) {
-                dropdown.classList.remove('open');
-            }
+            if (!seasonBtn.contains(e.target) && !dropdown.contains(e.target)) dropdown.classList.remove('open');
         };
     }
 
@@ -618,7 +629,7 @@
             const card = document.createElement('button');
             card.className = `episode-card ${ep.episode_number === selectedEpisode ? 'active' : ''}`;
             card.innerHTML = `
-                <img src="${ep.still_path ? TMDB_STILL + ep.still_path : FALLBACK_STILL}" class="ep-thumb" alt="" onerror="this.src='${FALLBACK_STILL}'">
+                <img src="${ep.still_path ? TMDB_STILL + ep.still_path : FALLBACK_STILL}" class="ep-thumb" onerror="this.src='${FALLBACK_STILL}'">
                 <span class="ep-num">E${ep.episode_number}</span>
                 <span class="ep-title">${ep.name}</span>
                 <span class="ep-runtime">${ep.runtime ? ep.runtime + 'm' : ''}</span>
@@ -626,7 +637,6 @@
             `;
             card.onclick = () => {
                 selectedEpisode = ep.episode_number;
-
                 const newUrl = new URL(window.location);
                 newUrl.searchParams.set('season', selectedSeason);
                 newUrl.searchParams.set('episode', selectedEpisode);
@@ -640,13 +650,6 @@
             strip.appendChild(card);
         });
         updateEpisodeContext();
-
-        setTimeout(() => {
-            const activeCard = strip.querySelector('.active');
-            if (activeCard) {
-                activeCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-            }
-        }, 100);
     }
 
     function updateEpisodeContext() {
@@ -663,60 +666,41 @@
     async function loadSimilar() {
         try {
             const data = await fetchTMDB(`/${mediaType}/${mediaId}/similar`);
-            const items = (data.results || []).slice(0, 6).map(item => ({
-                id: item.id,
-                title: item.title || item.name || 'Untitled',
-                year: (item.release_date || item.first_air_date || '').slice(0, 4) || '—',
-                rating: item.vote_average ? item.vote_average.toFixed(1) : '—',
-                type: mediaType,
-                poster: item.poster_path ? TMDB_POSTER + item.poster_path : null
-            }));
-
             const grid = document.getElementById('similar-grid');
             grid.innerHTML = '';
 
-            items.forEach(m => {
+            (data.results || []).slice(0, 6).forEach(item => {
                 const card = document.createElement('div');
                 card.className = 'movie-card';
                 card.innerHTML = `
                     <div class="poster-wrap">
-                        <img src="${m.poster || FALLBACK_POSTER}" class="poster" alt="" loading="lazy">
+                        <img src="${item.poster_path ? TMDB_POSTER + item.poster_path : FALLBACK_POSTER}" class="poster" loading="lazy">
                         <div class="card-overlay">
-                            <button class="overlay-btn play-btn" title="Play">
-                                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                            </button>
-                            <button class="overlay-btn bookmark-btn" title="Add to Library">
-                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
-                            </button>
+                            <button class="overlay-btn play-btn" title="Play"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+                            <button class="overlay-btn bookmark-btn" title="Add to Library"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
                         </div>
                     </div>
                     <div class="card-info">
-                        <div class="card-title">${m.title}</div>
+                        <div class="card-title">${item.title || item.name}</div>
                         <div class="card-meta">
-                            <span>${m.year}</span>
-                            <span class="score">★ ${m.rating}</span>
+                            <span>${(item.release_date || item.first_air_date || '').slice(0, 4)}</span>
+                            <span class="score">★ ${item.vote_average ? item.vote_average.toFixed(1) : '—'}</span>
                         </div>
                     </div>
                 `;
-
-                card.onclick = () => { window.location.href = `watch.html?id=${m.id}&type=${mediaType}`; };
-
-                const bookmarkBtn = card.querySelector('.bookmark-btn');
-                bookmarkBtn.onclick = (e) => {
+                card.onclick = () => { window.location.href = `watch.html?id=${item.id}&type=${mediaType}`; };
+                card.querySelector('.bookmark-btn').onclick = (e) => {
                     e.stopPropagation();
-                    addToList('bookmarks', m);
-                    showToast(`Saved "${m.title}" to your Library`);
+                    addToList('bookmarks', { id: item.id, title: item.title||item.name, type: mediaType, poster: item.poster_path ? TMDB_POSTER + item.poster_path : null });
+                    showToast(`Saved to your Library`);
                 };
-
                 grid.appendChild(card);
             });
-        } catch (e) {
-            console.warn(e);
-        }
+        } catch (e) {}
     }
 
     // ==========================================
-    // MY LIBRARY (local + cloud, same shape as index.html)
+    // LIBRARY
     // ==========================================
     function addToList(list, movie) {
         const items = JSON.parse(localStorage.getItem(`streamindex_${list}`) || '[]');
@@ -729,19 +713,11 @@
 
     async function cloudAddToList(list, movie) {
         if (!currentUser || !supabase) return;
-        const { error } = await supabase
-            .from('user_lists')
-            .upsert({
-                user_id: currentUser.id,
-                list,
-                media_id: String(movie.id),
-                movie
-            }, { onConflict: 'user_id,list,media_id' });
-        if (error) console.error('Cloud list save failed:', error.message);
+        supabase.from('user_lists').upsert({ user_id: currentUser.id, list, media_id: String(movie.id), movie }).then();
     }
 
     // ==========================================
-    // PLAYER
+    // PLAYER & PROXY DOWNLOAD SETUP
     // ==========================================
     function setupPlayer() {
         const serverPills = document.getElementById('server-pills');
@@ -753,7 +729,6 @@
             pill.onclick = () => switchServer(s.id);
             serverPills.appendChild(pill);
         });
-
         updatePlayerSource();
     }
 
@@ -765,14 +740,24 @@
     }
 
     function setState(kind, text) {
-        const dot = document.getElementById('state-dot');
-        dot.className = 'dot' + (kind === 'busy' ? ' busy' : kind === 'err' ? ' err' : '');
+        document.getElementById('state-dot').className = 'dot' + (kind === 'busy' ? ' busy' : kind === 'err' ? ' err' : '');
         document.getElementById('state-text').innerText = text;
     }
 
     async function updatePlayerSource() {
         const iframe = document.getElementById('movie-iframe');
         const video = document.getElementById('video-player');
+        
+        // Reset Download button state
+        const dBtn = document.getElementById('download-btn');
+        const wrap = document.getElementById('download-progress-wrap');
+        const text = document.getElementById('download-progress-text');
+        dBtn.disabled = true;
+        dBtn.innerText = "Extracting stream...";
+        wrap.style.display = 'none';
+        text.style.display = 'none';
+        currentDownloadUrl = null;
+
         stopProgressTracking();
         destroyHls();
         try { video.pause(); } catch (e) {}
@@ -785,37 +770,33 @@
         } else {
             iframe.src = getEmbedUrl(activeServerId);
             setState('ok', 'Embed mode');
+            dBtn.innerText = "Download Unavailable (Embed)";
             markStarted();
         }
     }
 
-    // Ask the backend for the raw m3u8 and play it ourselves (enables resume)
     async function tryDirectStream() {
         setState('busy', 'Extracting stream…');
-        const qs = new URLSearchParams({
-            id: mediaId,
-            type: mediaType,
-            server: 1,
-            season: selectedSeason,
-            episode: selectedEpisode
-        });
+        const qs = new URLSearchParams({ id: mediaId, type: mediaType, server: 1, season: selectedSeason, episode: selectedEpisode });
 
         try {
-            // 8s timeout: if the backend is asleep or slow, fall back almost
-            // immediately instead of making the user wait 45 seconds.
             const res = await fetchWithTimeout(`${BACKEND_URL}/api/stream?${qs}`, 8000);
             if (!res.ok) throw new Error(`backend ${res.status}`);
             const data = await res.json();
 
             if (data.isRawStream && data.targetUrl) {
+                // ENABLE DOWNLOAD BUTTON
+                currentDownloadUrl = data.targetUrl;
+                document.getElementById('download-btn').innerText = "Download Episode (1080p)";
+                document.getElementById('download-btn').disabled = false;
+                
                 playDirect(data.targetUrl, data.referer || '');
             } else {
                 throw new Error('no stream extracted');
             }
         } catch (err) {
-            console.warn('Direct stream failed:', err.message);
             setState('err', 'Direct unavailable — using embed');
-            // Silently fall back to embed server 1
+            document.getElementById('download-btn').innerText = "Download Unavailable (Embed)";
             activeServerId = 1;
             document.querySelectorAll('#server-pills .pill').forEach(p => p.classList.remove('active'));
             const pills = document.querySelectorAll('#server-pills .pill');
@@ -823,6 +804,85 @@
             document.getElementById('movie-iframe').src = getEmbedUrl(1);
             markStarted();
         }
+    }
+
+    // Proxy Downloader Functionality
+    function setupDownloader() {
+        const btn = document.getElementById('download-btn');
+        const wrap = document.getElementById('download-progress-wrap');
+        const bar = document.getElementById('download-progress-bar');
+        const text = document.getElementById('download-progress-text');
+
+        btn.onclick = async () => {
+            if (!currentDownloadUrl) return showToast("No raw stream available to download.");
+
+            try {
+                btn.disabled = true;
+                wrap.style.display = 'block';
+                text.style.display = 'block';
+                text.innerText = "Connecting to server via proxy...";
+                bar.style.width = "5%";
+                bar.style.background = "var(--accent)";
+
+                const proxyRequestUrl = `${WORKER_URL}?url=${encodeURIComponent(currentDownloadUrl)}`;
+                
+                const response = await fetch(proxyRequestUrl);
+                if (!response.ok) throw new Error(`Server returned ${response.status}`);
+
+                const contentLength = response.headers.get("Content-Length");
+                const total = parseInt(contentLength, 10) || 0;
+                let loaded = 0;
+
+                const reader = response.body.getReader();
+                const chunks = [];
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    chunks.push(value);
+                    loaded += value.length;
+
+                    if (total) {
+                        const percent = Math.round((loaded / total) * 100);
+                        const loadedMB = (loaded / (1024 * 1024)).toFixed(1);
+                        const totalMB = (total / (1024 * 1024)).toFixed(1);
+                        bar.style.width = `${percent}%`;
+                        text.innerText = `Downloading: ${percent}% (${loadedMB} MB / ${totalMB} MB)`;
+                    } else {
+                        const loadedMB = (loaded / (1024 * 1024)).toFixed(1);
+                        text.innerText = `Downloading: ${loadedMB} MB (Total size unknown)...`;
+                    }
+                }
+
+                text.innerText = "Stitching file together...";
+                bar.style.background = "var(--warn)";
+
+                const blob = new Blob(chunks, { type: "video/mp4" });
+                const blobUrl = URL.createObjectURL(blob);
+
+                const cleanTitle = (currentMovie?.title || "Video").replace(/[^a-z0-9]/gi, '_');
+                const epStr = mediaType === 'tv' ? `_S${selectedSeason}E${selectedEpisode}` : '';
+                
+                const a = document.createElement("a");
+                a.href = blobUrl;
+                a.download = `StreamIndex_${cleanTitle}${epStr}.mp4`;
+                document.body.appendChild(a);
+                a.click();
+                
+                a.remove();
+                URL.revokeObjectURL(blobUrl);
+
+                text.innerText = "Download Complete!";
+                bar.style.background = "var(--accent)";
+            } catch (err) {
+                console.error(err);
+                text.innerText = "Error: " + err.message;
+                bar.style.background = "var(--primary)";
+            } finally {
+                btn.disabled = false;
+            }
+        };
     }
 
     function fetchWithTimeout(url, ms) {
@@ -840,22 +900,19 @@
         usingDirectStream = true;
         setState('ok', 'Direct stream (resumable)');
 
-        const src = streamUrl;
-
         if (Hls.isSupported()) {
             hls = new Hls({ enableWorker: true });
-            hls.loadSource(src);
+            hls.loadSource(streamUrl);
             hls.attachMedia(video);
             hls.on(Hls.Events.ERROR, (_e, d) => {
                 if (d.fatal) {
-                    console.error('HLS fatal error:', d);
                     setState('err', 'Stream error — switching to embed');
                     usingDirectStream = false;
                     switchServer(1);
                 }
             });
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = src; // Safari native HLS
+            video.src = streamUrl; 
         } else {
             setState('err', 'HLS unsupported — using embed');
             switchServer(1);
@@ -869,7 +926,6 @@
     function maybeOfferResume(video) {
         loadSavedProgress().then(saved => {
             if (!saved || !saved.t || saved.t < 10 || (saved.pct || 0) > 0.97) {
-                // nothing meaningful to resume — just start
                 markStarted();
                 startProgressTracking(video);
                 return;
@@ -892,25 +948,14 @@
         });
     }
 
-    function hideResumeBar() {
-        document.getElementById('resume-bar').classList.remove('show');
-    }
+    function hideResumeBar() { document.getElementById('resume-bar').classList.remove('show'); }
 
     function attachVideoProgress(video) {
         video.addEventListener('timeupdate', () => {
-            if (!usingDirectStream || !video.duration || isNaN(video.duration)) return;
-            const pct = video.currentTime / video.duration;
-            saveProgress(Math.floor(video.currentTime), pct);
+            if (!usingDirectStream || !video.duration) return;
+            saveProgress(Math.floor(video.currentTime), video.currentTime / video.duration);
         });
         video.addEventListener('pause', () => {
-            if (!usingDirectStream || !video.duration) return;
-            saveProgress(Math.floor(video.currentTime), video.currentTime / video.duration, true);
-        });
-        video.addEventListener('ended', () => {
-            if (!usingDirectStream) return;
-            saveProgress(Math.floor(video.duration || 0), 1, true);
-        });
-        window.addEventListener('beforeunload', () => {
             if (!usingDirectStream || !video.duration) return;
             saveProgress(Math.floor(video.currentTime), video.currentTime / video.duration, true);
         });
@@ -933,18 +978,12 @@
         usingDirectStream = false;
     }
 
-    // For iframe mode: at least mark the title as started so it appears in Continue Watching
     function markStarted() {
         if (!currentMovie) return;
         const all = getLocalProgress();
-        if (!all[progressKey()]) {
-            saveProgress(0, 0.02, true);
-        }
+        if (!all[progressKey()]) saveProgress(0, 0.02, true);
     }
 
-    // ==========================================
-    // UI
-    // ==========================================
     function setupUI() {
         document.getElementById('library-btn').onclick = () => {
             if (!currentMovie) return;
