@@ -871,8 +871,8 @@
         if (!all[progressKey()]) saveProgress(0, 0.02, true);
     }
 
-    // ==========================================
-    // CUSTOM HLS STITCHER 
+ // ==========================================
+    // CUSTOM HLS STITCHER (WITH REFERER FIX)
     // ==========================================
     function setupHlsDownloader() {
         const btn = document.getElementById("start-hls-download");
@@ -897,10 +897,21 @@
             progressBar.style.background = "var(--accent)";
 
             try {
-                // 1. Fetch Playlist
-                const proxyPlaylistUrl = `${WORKER_URL}?url=${encodeURIComponent(m3u8Url)}`;
+                // Dynamic Referer hint to prevent 403 Forbidden errors
+                let refererHint = "https://vidlink.pro/";
+                if (m3u8Url.includes("zenoak.top")) {
+                    refererHint = "https://vidlink.pro/";
+                } else {
+                    try {
+                        const parsed = new URL(m3u8Url);
+                        refererHint = `${parsed.protocol}//${parsed.hostname}/`;
+                    } catch(e){}
+                }
+
+                // 1. Fetch Playlist via Proxy with Referer Hint
+                const proxyPlaylistUrl = `${WORKER_URL}?url=${encodeURIComponent(m3u8Url)}&ref=${encodeURIComponent(refererHint)}`;
                 const res = await fetch(proxyPlaylistUrl);
-                if (!res.ok) throw new Error("Failed to fetch playlist via proxy.");
+                if (!res.ok) throw new Error(`Failed to fetch playlist via proxy (Status ${res.status}).`);
 
                 const playlistText = await res.text();
                 const lines = playlistText.split('\n');
@@ -932,7 +943,7 @@
                 for (let i = 0; i < segmentUrls.length; i += BATCH_SIZE) {
                     const batch = segmentUrls.slice(i, i + BATCH_SIZE);
                     const promises = batch.map(async (chunkUrl, index) => {
-                        const chunkProxyUrl = `${WORKER_URL}?url=${encodeURIComponent(chunkUrl)}`;
+                        const chunkProxyUrl = `${WORKER_URL}?url=${encodeURIComponent(chunkUrl)}&ref=${encodeURIComponent(refererHint)}`;
                         const chunkRes = await fetch(chunkProxyUrl);
                         if (!chunkRes.ok) throw new Error(`Failed chunk ${i + index}`);
                         return chunkRes.arrayBuffer();
