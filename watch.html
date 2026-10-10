@@ -129,22 +129,19 @@
         .dot.err { background: var(--primary); }
         @keyframes blink { 50% { opacity: 0.3; } }
 
-        /* Download Bar Styles */
+        /* Custom Downloader UI */
         .download-bar {
-            max-width: 1200px; margin: 0 auto; padding: 16px 4%;
-            border-bottom: 1px solid rgba(255,255,255,0.07);
-            display: flex; flex-direction: column; gap: 10px;
+            max-width: 1200px; margin: 16px auto; padding: 20px 4%;
+            background: rgba(24, 25, 27, 0.8); border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 8px;
         }
-        .download-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
         .download-btn {
             background: var(--accent); color: #000; border: none; font-weight: 600;
-            padding: 8px 16px; border-radius: 4px; cursor: pointer; transition: 0.2s; font-size: 0.85rem;
+            padding: 10px 20px; border-radius: 4px; cursor: pointer; transition: 0.2s; font-size: 0.9rem;
+            white-space: nowrap;
         }
         .download-btn:hover:not(:disabled) { opacity: 0.9; transform: scale(1.02); }
         .download-btn:disabled { opacity: 0.5; cursor: not-allowed; background: #555; color: #aaa; }
-        .progress-wrapper { width: 100%; background: #2a2a2a; border-radius: 4px; overflow: hidden; display: none; height: 8px; margin-top: 8px; }
-        .progress-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s; }
-        .progress-text { font-size: 0.8rem; color: var(--text-sub); margin-top: 4px; display: none; }
 
         .title-block { max-width: 1200px; margin: 0 auto; padding: 24px 4% 0; }
         .watch-title { font-size: 1.7rem; line-height: 1.2; }
@@ -251,37 +248,23 @@
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.65);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            opacity: 0;
-            transition: opacity 0.2s ease;
+            display: flex; align-items: center; justify-content: center; gap: 12px;
+            opacity: 0; transition: opacity 0.2s ease;
         }
 
         .movie-card:hover .card-overlay { opacity: 1; }
 
         .overlay-btn {
             background: rgba(255, 255, 255, 0.2);
-            border: none;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            color: #fff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            backdrop-filter: blur(4px);
+            border: none; border-radius: 50%;
+            width: 40px; height: 40px; color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; backdrop-filter: blur(4px);
             transition: background 0.2s, transform 0.2s;
         }
 
         @media (max-height: 500px) and (orientation: landscape) {
-            .player {
-                max-height: calc(100vh - var(--nav-height));
-                width: calc((100vh - var(--nav-height)) * (16 / 9));
-                max-width: 100%;
-            }
+            .player { max-height: calc(100vh - var(--nav-height)); width: calc((100vh - var(--nav-height)) * (16 / 9)); max-width: 100%; }
         }
 
         .overlay-btn:hover { background: var(--primary); transform: scale(1.1); }
@@ -321,16 +304,17 @@
     </div>
 </div>
 
-<!-- Download Proxy Bar -->
+<!-- Manual HLS Downloader Bar -->
 <div class="download-bar" id="download-bar">
-    <div class="download-head">
-        <span style="font-size: 0.9rem; font-weight: 600;">Offline Viewing</span>
-        <button id="download-btn" class="download-btn" disabled>Extracting stream...</button>
+    <h6 style="margin-bottom: 12px; color: var(--text-main); font-weight: 600; font-size: 1rem;">HLS Custom Downloader</h6>
+    <div style="display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
+        <input type="text" id="m3u8-input" class="form-control" placeholder="Paste .m3u8 link here (e.g., from FetchV)" style="flex: 1; min-width: 220px; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15); background: var(--bg-dark); color: var(--text-main); font-family: inherit;">
+        <button id="start-hls-download" class="download-btn">Start Download</button>
     </div>
-    <div class="progress-wrapper" id="download-progress-wrap">
-        <div class="progress-bar" id="download-progress-bar"></div>
+    <div class="progress-wrapper" id="hls-progress-wrap" style="display: none; width: 100%; background: #2a2a2a; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 8px;">
+        <div class="progress-bar" id="hls-progress-bar" style="width: 0%; height: 100%; background: var(--accent); transition: width 0.2s;"></div>
     </div>
-    <div class="progress-text" id="download-progress-text"></div>
+    <div id="hls-status-text" style="color: var(--text-sub); font-size: 0.85rem; margin-top: 8px; font-family: monospace;"></div>
 </div>
 
 <div class="episode-bar" id="episode-bar" style="display:none">
@@ -367,7 +351,6 @@
     // ==========================================
     const BACKEND_URL = 'https://stream-index-hava.onrender.com';
     const WORKER_URL = 'https://stream-proxy.tsmmunesh.workers.dev/'; // Your new proxy worker
-    let currentDownloadUrl = null;
 
     const TMDB_API_KEY = '8950f9f8257d45a24d373932a74ba2ec';
     const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -568,7 +551,7 @@
 
         setupPlayer();
         setupUI();
-        setupDownloader();
+        setupHlsDownloader();
     }
 
     // ==========================================
@@ -717,7 +700,7 @@
     }
 
     // ==========================================
-    // PLAYER & PROXY DOWNLOAD SETUP
+    // PLAYER SETUP
     // ==========================================
     function setupPlayer() {
         const serverPills = document.getElementById('server-pills');
@@ -747,16 +730,6 @@
     async function updatePlayerSource() {
         const iframe = document.getElementById('movie-iframe');
         const video = document.getElementById('video-player');
-        
-        // Reset Download button state
-        const dBtn = document.getElementById('download-btn');
-        const wrap = document.getElementById('download-progress-wrap');
-        const text = document.getElementById('download-progress-text');
-        dBtn.disabled = true;
-        dBtn.innerText = "Extracting stream...";
-        wrap.style.display = 'none';
-        text.style.display = 'none';
-        currentDownloadUrl = null;
 
         stopProgressTracking();
         destroyHls();
@@ -770,7 +743,6 @@
         } else {
             iframe.src = getEmbedUrl(activeServerId);
             setState('ok', 'Embed mode');
-            dBtn.innerText = "Download Unavailable (Embed)";
             markStarted();
         }
     }
@@ -785,18 +757,12 @@
             const data = await res.json();
 
             if (data.isRawStream && data.targetUrl) {
-                // ENABLE DOWNLOAD BUTTON
-                currentDownloadUrl = data.targetUrl;
-                document.getElementById('download-btn').innerText = "Download Episode (1080p)";
-                document.getElementById('download-btn').disabled = false;
-                
                 playDirect(data.targetUrl, data.referer || '');
             } else {
                 throw new Error('no stream extracted');
             }
         } catch (err) {
             setState('err', 'Direct unavailable — using embed');
-            document.getElementById('download-btn').innerText = "Download Unavailable (Embed)";
             activeServerId = 1;
             document.querySelectorAll('#server-pills .pill').forEach(p => p.classList.remove('active'));
             const pills = document.querySelectorAll('#server-pills .pill');
@@ -804,85 +770,6 @@
             document.getElementById('movie-iframe').src = getEmbedUrl(1);
             markStarted();
         }
-    }
-
-    // Proxy Downloader Functionality
-    function setupDownloader() {
-        const btn = document.getElementById('download-btn');
-        const wrap = document.getElementById('download-progress-wrap');
-        const bar = document.getElementById('download-progress-bar');
-        const text = document.getElementById('download-progress-text');
-
-        btn.onclick = async () => {
-            if (!currentDownloadUrl) return showToast("No raw stream available to download.");
-
-            try {
-                btn.disabled = true;
-                wrap.style.display = 'block';
-                text.style.display = 'block';
-                text.innerText = "Connecting to server via proxy...";
-                bar.style.width = "5%";
-                bar.style.background = "var(--accent)";
-
-                const proxyRequestUrl = `${WORKER_URL}?url=${encodeURIComponent(currentDownloadUrl)}`;
-                
-                const response = await fetch(proxyRequestUrl);
-                if (!response.ok) throw new Error(`Server returned ${response.status}`);
-
-                const contentLength = response.headers.get("Content-Length");
-                const total = parseInt(contentLength, 10) || 0;
-                let loaded = 0;
-
-                const reader = response.body.getReader();
-                const chunks = [];
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    chunks.push(value);
-                    loaded += value.length;
-
-                    if (total) {
-                        const percent = Math.round((loaded / total) * 100);
-                        const loadedMB = (loaded / (1024 * 1024)).toFixed(1);
-                        const totalMB = (total / (1024 * 1024)).toFixed(1);
-                        bar.style.width = `${percent}%`;
-                        text.innerText = `Downloading: ${percent}% (${loadedMB} MB / ${totalMB} MB)`;
-                    } else {
-                        const loadedMB = (loaded / (1024 * 1024)).toFixed(1);
-                        text.innerText = `Downloading: ${loadedMB} MB (Total size unknown)...`;
-                    }
-                }
-
-                text.innerText = "Stitching file together...";
-                bar.style.background = "var(--warn)";
-
-                const blob = new Blob(chunks, { type: "video/mp4" });
-                const blobUrl = URL.createObjectURL(blob);
-
-                const cleanTitle = (currentMovie?.title || "Video").replace(/[^a-z0-9]/gi, '_');
-                const epStr = mediaType === 'tv' ? `_S${selectedSeason}E${selectedEpisode}` : '';
-                
-                const a = document.createElement("a");
-                a.href = blobUrl;
-                a.download = `StreamIndex_${cleanTitle}${epStr}.mp4`;
-                document.body.appendChild(a);
-                a.click();
-                
-                a.remove();
-                URL.revokeObjectURL(blobUrl);
-
-                text.innerText = "Download Complete!";
-                bar.style.background = "var(--accent)";
-            } catch (err) {
-                console.error(err);
-                text.innerText = "Error: " + err.message;
-                bar.style.background = "var(--primary)";
-            } finally {
-                btn.disabled = false;
-            }
-        };
     }
 
     function fetchWithTimeout(url, ms) {
@@ -982,6 +869,116 @@
         if (!currentMovie) return;
         const all = getLocalProgress();
         if (!all[progressKey()]) saveProgress(0, 0.02, true);
+    }
+
+    // ==========================================
+    // CUSTOM HLS STITCHER 
+    // ==========================================
+    function setupHlsDownloader() {
+        const btn = document.getElementById("start-hls-download");
+        const urlInput = document.getElementById("m3u8-input");
+        const progressWrap = document.getElementById("hls-progress-wrap");
+        const progressBar = document.getElementById("hls-progress-bar");
+        const statusText = document.getElementById("hls-status-text");
+
+        btn.onclick = async () => {
+            const m3u8Url = urlInput.value.trim();
+            if (!m3u8Url || !m3u8Url.includes(".m3u8")) {
+                statusText.innerText = "Error: Please enter a valid .m3u8 URL.";
+                statusText.style.color = "var(--primary)";
+                return;
+            }
+
+            btn.disabled = true;
+            progressWrap.style.display = "block";
+            statusText.style.color = "var(--text-sub)";
+            statusText.innerText = "Initializing... fetching playlist.";
+            progressBar.style.width = "2%";
+            progressBar.style.background = "var(--accent)";
+
+            try {
+                // 1. Fetch Playlist
+                const proxyPlaylistUrl = `${WORKER_URL}?url=${encodeURIComponent(m3u8Url)}`;
+                const res = await fetch(proxyPlaylistUrl);
+                if (!res.ok) throw new Error("Failed to fetch playlist via proxy.");
+
+                const playlistText = await res.text();
+                const lines = playlistText.split('\n');
+                const segmentUrls = [];
+                const baseUrl = m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1);
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (trimmed && !trimmed.startsWith('#')) {
+                        if (trimmed.startsWith('http')) {
+                            segmentUrls.push(trimmed);
+                        } else {
+                            segmentUrls.push(baseUrl + trimmed);
+                        }
+                    }
+                }
+
+                if (segmentUrls.length === 0) {
+                    throw new Error("No video segments found. Did you paste a master playlist instead of an index playlist?");
+                }
+
+                statusText.innerText = `Found ${segmentUrls.length} chunks. Starting parallel download...`;
+
+                // 2. Parallel Batch Download
+                const BATCH_SIZE = 5;
+                const downloadedChunks = [];
+                let completed = 0;
+
+                for (let i = 0; i < segmentUrls.length; i += BATCH_SIZE) {
+                    const batch = segmentUrls.slice(i, i + BATCH_SIZE);
+                    const promises = batch.map(async (chunkUrl, index) => {
+                        const chunkProxyUrl = `${WORKER_URL}?url=${encodeURIComponent(chunkUrl)}`;
+                        const chunkRes = await fetch(chunkProxyUrl);
+                        if (!chunkRes.ok) throw new Error(`Failed chunk ${i + index}`);
+                        return chunkRes.arrayBuffer();
+                    });
+
+                    const batchResults = await Promise.all(promises);
+                    downloadedChunks.push(...batchResults);
+                    
+                    completed += batch.length;
+                    const percent = Math.round((completed / segmentUrls.length) * 100);
+                    progressBar.style.width = `${percent}%`;
+                    statusText.innerText = `Downloading: ${percent}% (${completed}/${segmentUrls.length} chunks)`;
+                }
+
+                // 3. Stitch and Save
+                statusText.innerText = "Stitching chunks into video file...";
+                progressBar.style.background = "var(--warn)";
+
+                const videoBlob = new Blob(downloadedChunks, { type: 'video/mp2t' });
+                const blobUrl = URL.createObjectURL(videoBlob);
+                
+                const cleanTitle = (currentMovie?.title || "Video").replace(/[^a-z0-9]/gi, '_');
+                const epStr = mediaType === 'tv' ? `_S${selectedSeason}E${selectedEpisode}` : '';
+
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = `StreamIndex_${cleanTitle}${epStr}.ts`; 
+                document.body.appendChild(a);
+                a.click();
+                
+                a.remove();
+                URL.revokeObjectURL(blobUrl);
+
+                statusText.innerText = "Download Complete! File saved as .ts";
+                statusText.style.color = "var(--accent)";
+                progressBar.style.background = "var(--accent)";
+
+            } catch (err) {
+                console.error(err);
+                statusText.innerText = `Error: ${err.message}`;
+                statusText.style.color = "var(--primary)";
+                progressBar.style.background = "var(--primary)";
+            } finally {
+                btn.disabled = false;
+            }
+        };
     }
 
     function setupUI() {
